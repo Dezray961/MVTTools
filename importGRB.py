@@ -24,6 +24,7 @@ class GRBData:
         self.csvToDataFrame()
         self.correctTime()
         self.timeInBin()
+        self.logRate()
 
     # method to read in a CSV file and store the data
     def csvToDataFrame(
@@ -64,6 +65,15 @@ class GRBData:
             else:
                 timeInBin[i] = self.data['time'].to_numpy()[i + 1] - self.data['time'].to_numpy()[i]
         self.data['timeInBin'] = timeInBin
+    
+
+    # method to get the log of the rate
+    def logRate(
+            self
+            ) -> None:
+        rate: np.ndarray = self.data['rate'].to_numpy()
+        logRate: np.ndarray = np.log(rate)
+        self.data['logRate'] = logRate
 
 
 if __name__ == "__main__":

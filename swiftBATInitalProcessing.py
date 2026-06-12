@@ -10,9 +10,10 @@ from swiftBATCatalogueGRB import importData, getCoordinates, getStartStopTime
 # function to open an shell terminal and process the data using the HEASoft tools
 def processSwiftBATData(
         filename: str,
-        timeDeliniation: float,
+        SNRThreshold: float,
         energyBins: str,
-        GRBName: str
+        GRBName: str,
+        timeDeliniation: float = 0.0
         ) -> None:
     """_summary_
 
@@ -240,10 +241,22 @@ def processSwiftBATData(
 
     startTime, stopTime, t90Error = getStartStopTime(GRBName, data)
     print(f"Start time: {startTime}, Stop time: {stopTime}, T90 error: {t90Error}")
+    # if the time deliniation is 0, use the SNR to determine the time bins
+    if timeDeliniation != 0.0:
+        timebinalg: str = "u"
+        timeDeliniationString: str = f"timedel={timeDeliniation} "
+    else:
+        timeDeliniationString = f"snrthresh={SNRThreshold} "
+        timebinalg: str = "snr"
     # batbinevt infile={filename} outfile=onesec.lc outtype=LC timedel=1.0 timebinalg=u energybins=15-150 detmask=../hk/sw00306757000bdqcb.hk.gz clobber=YES
-    shell.sendline(f'batbinevt infile={file[:-3]} outfile=output.lc outtype=LC timedel={timeDeliniation} timebinalg=u energybins={energyBins} detmask=../hk/sw{file.split("sw")[1].split("bev")[0]}bdqcb.hk.gz tstart={startTime} tstop={stopTime} clobber=YES')
+    lightCurveCommand: str = f'batbinevt infile={file[:-3]} outfile=output.lc outtype=LC {timeDeliniationString}timebinalg={timebinalg} energybins={energyBins} detmask=../hk/sw{file.split("sw")[1].split("bev")[0]}bdqcb.hk.gz tstart={startTime} tstop={stopTime} clobber=YES'
+    shell.sendline(lightCurveCommand)
+    if timebinalg == "snr":
+        shell.expect('Histogram')
+        shell.send('\n')
     shell.expect('batbinevt v')
     shell.expect(['ERROR', 'written'])
+    shell.expect('----')
 
     # Close the shell terminal
     print("Closing shell terminal")
@@ -252,6 +265,6 @@ def processSwiftBATData(
 
 if __name__ == "__main__":
     filename = 'data/reproc/00306757000/bat/event/sw00306757000bevshsp_uf.evt.gz'
-    timeDeliniation = 100e-6
+    SNRThreshold = 5.0
     energyBins = "15-350"
-    processSwiftBATData(filename, timeDeliniation, energyBins, "GRB080319B")
+    processSwiftBATData(filename, SNRThreshold, energyBins, "GRB080319B")

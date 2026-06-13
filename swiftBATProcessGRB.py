@@ -113,7 +113,7 @@ def processSwiftBATData(
 
     # process the data using the HEASoft tools to generate light curves for the specified energy range and time bin size
     print(f"Processing data for {GRBName}...")
-    processing.processSwiftBATEventData(dataFilePath, SNRThreshold, energyRange, GRBName, timeBinSize)
+    processing.processSwiftBATData(dataFilePath, SNRThreshold, energyRange, GRBName, timeBinSize)
     print("Processing complete.")
 
     # convert the processed data into a CSV file for analysis

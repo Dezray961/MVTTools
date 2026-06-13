@@ -1,4 +1,5 @@
 import pandas as pd
+import requests
 
 
 # Function to return a observation id for a given GRB name
@@ -114,6 +115,16 @@ def getStartStopTime(grbName: str, data: list[list[str]]) -> tuple[float, float,
             t90Error = float(row[9])
     stopTime: float = triggerTime + t90Time
     return triggerTime, stopTime, t90Error
+
+
+# function to download the summary_general.txt file from the Swift BAT website
+def downloadSummaryGeneralFile() -> None:
+    url: str = "https://swift.gsfc.nasa.gov/results/batgrbcat/summary_cflux/summary_general_info/summary_general.txt"
+    response = requests.get(url)
+    with open("summary_general.txt", "wb") as f:
+        f.write(response.content)
+
+
 
 
 if __name__ == "__main__":

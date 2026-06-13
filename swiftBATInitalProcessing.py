@@ -223,7 +223,8 @@ def processSwiftBATData(
     shell.sendline('source $CALDB/software/tools/caldbinit.sh')
     shell.expect('CALDB/software/tools/caldbinit.sh') 
     shell.sendline('source $HEADAS/headas-init.sh')
-    shell.expect('headas-init.sh') 
+    shell.expect('headas-init.sh')
+
 
 
     # 3. Check if the data has the correct energy scale

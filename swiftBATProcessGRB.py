@@ -2,9 +2,9 @@
 download currently commented out.
 """
 
-from swiftBATCatalogueGRB import getObservationID, importData
-from swiftBATDataFetcher import downloadSwiftBATData, generateWgetStatement
-from swiftBATInitalProcessing import processSwiftBATData as processSwiftBATEventData
+import swiftBATCatalogueGRB as catalogue
+import swiftBATDataFetcher as fetcher
+import swiftBATInitalProcessing as processing
 import pexpect
 from contextlib import chdir
 from pathlib import Path
@@ -98,22 +98,22 @@ def processSwiftBATData(
 
 
     # generate the wget statement to download the data for the given GRB name
-    wgetStatement: str = generateWgetStatement(GRBName)
+    wgetStatement: str = fetcher.generateWgetStatement(GRBName)
 
     # download the data using the generated wget statement
     if download:
         print(f"Downloading data for {GRBName}...")
-        downloadSwiftBATData(wgetStatement)
+        fetcher.downloadSwiftBATData(wgetStatement)
         print("Download complete.")
 
     # generate the file path for the downloaded data
-    data, _ = importData('summary_general.csv')
-    observationID: str = getObservationID(GRBName, data)
+    data, _ = catalogue.importData('summary_general.csv')
+    observationID: str = catalogue.getObservationID(GRBName, data)
     dataFilePath: str = f"data/reproc/{observationID}/bat/event/sw{observationID}bevshsp_uf.evt.gz"
 
     # process the data using the HEASoft tools to generate light curves for the specified energy range and time bin size
     print(f"Processing data for {GRBName}...")
-    processSwiftBATEventData(dataFilePath, SNRThreshold, energyRange, GRBName, timeBinSize)
+    processing.processSwiftBATEventData(dataFilePath, SNRThreshold, energyRange, GRBName, timeBinSize)
     print("Processing complete.")
 
     # convert the processed data into a CSV file for analysis
@@ -129,4 +129,4 @@ def processSwiftBATData(
 
 if __name__ == "__main__":
     grbName: str = "GRB080319B"
-    processSwiftBATData(grbName, 5.0, "15-350", download=True, deleteOriginal=True)
+    processSwiftBATData(grbName, 5.0, "15-350", download=False, deleteOriginal=False)

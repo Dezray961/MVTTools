@@ -1,0 +1,109 @@
+{
+  "shell": {
+    "bash": {
+      "extension": "sh",
+      "config_file": ["$HOME .bashrc", "$HOME .bash_profile", "$HOME .profile"],
+      "env_cmd": "export HEADAS={}",
+      "alias": "alias heainit=\"{};pset fhelp text=no online=yes\"",
+      "source": ". {}"
+    },
+    "sh": {
+      "extension": "sh",
+      "config_file": ["$HOME .profile"],
+      "env_cmd": "export HEADAS={}",
+      "alias": "alias heainit=\"{};pset fhelp text=no online=yes\"",
+      "source": ". {}"
+    },
+    "zsh": {
+      "extension": "sh",
+      "config_file": ["$HOME .zshrc", "$HOME .zprofile"],
+      "env_cmd": "export HEADAS={}",
+      "alias": "alias heainit=\"{};pset fhelp text=no online=yes\"",
+      "source": ". {}"
+    },
+    "ksh": {
+      "extension": "sh",
+      "config_file": ["$HOME .kshrc", "$HOME .profile"],
+      "env_cmd": "export HEADAS={}",
+      "alias": "alias heainit=\"{};pset fhelp text=no online=yes\"",
+      "source": ". {}"
+    },
+    "dash": {
+      "extension": "sh",
+      "config_file": ["$HOME .profile"],
+      "env_cmd": "export HEADAS={}",
+      "alias": "alias heainit=\"{};pset fhelp text=no online=yes\"",
+      "source": ". {}"
+    },
+    "ash": {
+      "extension": "sh",
+      "config_file": ["$HOME .ashrc", "$HOME .profile"],
+      "env_cmd": "export HEADAS={}",
+      "alias": "alias heainit=\"{};pset fhelp text=no online=yes\"",
+      "source": ". {}"
+    },
+    "elvish": {
+      "extension": "sh",
+      "config_file": [
+        "$HOME .elvish rc.elv",
+        "$XDG_CONFIG_HOME elvish rc.elv",
+        "$HOME .config elvish rc.elv"
+      ],
+      "env_cmd": "add-var HEADAS = {}",
+      "alias": "fn heainit { {};pset fhelp text=no online=yes }",
+      "source": "eval (slurp < {})"
+    },
+    "csh": {
+      "extension": "csh",
+      "config_file": ["$HOME .cshrc", "$HOME .login"],
+      "env_cmd": "setenv HEADAS {}",
+      "alias": "alias heainit \"{};pset fhelp text=no online=yes\"",
+      "source": ". {}"
+    },
+    "tcsh": {
+      "extension": "csh",
+      "config_file": ["$HOME .tcshrc", "$HOME .cshrc", "$HOME .login"],
+      "env_cmd": "setenv HEADAS {}",
+      "alias": "alias heainit \"{};pset fhelp text=no online=yes\"",
+      "source": ". {}"
+    }
+  },
+  "darwin": {
+    "compilers": ["clang", "clang++", "perl", "gfortran-14", "python3"],
+    "package_manager": {
+      "port": {
+        "initializer": "xcode-select --install",
+        "update": "sudo port  selfupdate",
+        "upgrade": "sudo port upgrade outdated",
+        "packages": ["gcc14", "libpng", "aria2", "python", "py-pip"],
+        "install_cmd": "sudo port install",
+        "link": "mac_arm_darwin24"
+      },
+      "brew": {
+        "initializer": "xcode-select --install",
+        "update": "brew update",
+        "upgrade": "brew upgrade",
+        "packages": [
+          "gcc@14",
+          "libpng",
+          "aria2",
+          "python",
+          "xquartz",
+          "xorg-server"
+        ],
+        "install_cmd": "brew install",
+        "link": "mac_arm_darwin24"
+      }
+    },
+    "py_manager": {
+      "conda": {
+        "libraries": ["astropy", "numpy", "scipy", "matplotlib", "pip"],
+        "install_cmd": "conda install"
+      },
+      "pip": {
+        "libraries": ["astropy", "numpy", "scipy", "matplotlib"],
+        "install_cmd": "pip install"
+      }
+    }
+  }
+}

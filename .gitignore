@@ -6,3 +6,4 @@ HEASoft/
 *.txt
 *.csv
 !requirements.txt
+*.so

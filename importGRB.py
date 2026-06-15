@@ -77,9 +77,12 @@ class GRBData:
 
 
 if __name__ == "__main__":
+    # print the working directory
+    import os
+    print(f"Working directory: {os.getcwd()}")
     import matplotlib.pyplot as plt
     grbName: str = "GRB080319B"
-    csvFilePath: str = f"data/processed/{grbName}LC.csv"
+    csvFilePath: str = "data/processed/testData.csv"
     grbData: GRBData = GRBData(grbName, csvFilePath)
     print(grbData.data.head())
     fig, ax = plt.subplots()

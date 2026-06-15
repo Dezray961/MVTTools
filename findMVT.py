@@ -1,18 +1,17 @@
-#### This needs to be converted to c++ as it is too slow in python.
 #### I am also not sure how the paper has so many data points for the VT vs k plot.
-
-
-
-
 
 
 from importGRB import GRBData
 import numpy as np
 import pandas as pd
+import ctypes
+import os
+from contextlib import chdir
+import time
 
 
-# class to perform the MVT analysis on a GRB
-class MVTAnalysis(GRBData):
+# class to hand data to the C++ code and get the results back
+class analyseGRB(GRBData):
     # constructor for the MVTAnalysis class
     def __init__(self,
                  name: str,
@@ -20,91 +19,73 @@ class MVTAnalysis(GRBData):
                  ) -> None:
         super().__init__(name, CSVfilePath)
         self.lengthOfData: int = len(self.data)
-        # find the window size from the length of the data and the divisor (must be a power of 2)
-        self.windowSize: int = 2 ** int(np.log2(self.lengthOfData))
-        self.kMax: int = self.windowSize // 2
-        self.__findKValues()
-        
+        # create a pointer to the MVTAnalysis class
+        self.cWrapper()
+        rate: np.ndarray = np.ascontiguousarray(self.data['rate'].to_numpy(), dtype=np.float64)
+        time: np.ndarray = np.ascontiguousarray(self.data['time'].to_numpy(), dtype=np.float64)
+        rateErr: np.ndarray = np.ascontiguousarray(self.data['error'].to_numpy(), dtype=np.float64)
+        # run the C++ code to get the results back
+        self.analysis = self.lib.allocateMVTAnalysis(
+            rate.ctypes.data_as(ctypes.POINTER(ctypes.c_double)),
+            time.ctypes.data_as(ctypes.POINTER(ctypes.c_double)),
+            rateErr.ctypes.data_as(ctypes.POINTER(ctypes.c_double)),
+            self.lengthOfData
+            )
+        self.VTSet: np.ndarray = self.getVTSetAsArray()
 
-    # method to find the set of k values to use for the analysis
-    def __findKValues(
+
+    # method to hand the data to the C++ code and get the results back
+    def cWrapper(
             self
-            ) -> None:
-        kValues: list = []
-        number: int = 1
-        while number <= self.kMax:
-            kValues.append(number)
-            number *= 2
-        # remove the first value of kValues (which is 1) as it is not useful for the analysis
-        #kValues = kValues[1:]
-        self.kSet: list = kValues
+    ) -> None:
+        # tell the interpreter where to find the C++ shared library
+        self.libPath: str = os.path.join(os.path.dirname(__file__), "cFiles", "findMVT.so")
+        self.lib: ctypes.CDLL = ctypes.CDLL(self.libPath)
+        # declare the argument and return types for the C++ function
+        self.lib.allocateMVTAnalysis.argtypes = [
+            ctypes.POINTER(ctypes.c_double),
+            ctypes.POINTER(ctypes.c_double),
+            ctypes.POINTER(ctypes.c_double),
+            ctypes.c_int
+        ]
+        self.lib.allocateMVTAnalysis.restype = ctypes.c_void_p
+        self.lib.getVTSetArray.argtypes = [ctypes.c_void_p]
+        self.lib.getVTSetArray.restype = ctypes.POINTER(ctypes.c_double)
+        self.lib.getVTSetSize.argtypes = [ctypes.c_void_p]
+        self.lib.getVTSetSize.restype = ctypes.c_int
 
 
-    # method to find the local average over k samples
-    def __localAverageOverKBins(
-            self,
-            index: int,
-            k: int
-            ) -> np.ndarray:
-        summationList: list = []
-        for i in range(0, k):
-            interiorIndex: int = index - i
-            summationList.append(self.data['logRate'].to_numpy()[interiorIndex])
-        return 1 / k * np.sum(summationList)
-    
-
-    # method to find the local average over k samples for the entire data set
-    def __localAverageOverKBinsForDataSet(
-            self,
-            k: int
-            ) -> np.ndarray:
-        localAverage: np.ndarray = np.zeros(self.lengthOfData)
-        for i in range(k, self.lengthOfData):
-            localAverage[i] = self.__localAverageOverKBins(i, k)
-        return localAverage
-
-    
-    # method to find the square of the difference between local averages
-    def __squaredDifference(
-            self,
-            k: int
-            ) -> np.ndarray:
-        localAverage: np.ndarray = self.__localAverageOverKBinsForDataSet(k)
-        squaredDifferences: np.ndarray = np.zeros(self.lengthOfData)
-        for i in range(k, self.lengthOfData):
-            squaredDifferences[i] = (localAverage[i] - localAverage[i - k]) ** 2
-        return squaredDifferences
-
-
-    # method to find the VT from the square of the difference between local averages
-    def __findVT(
-            self,
-            k: int
-            ) -> float:
-        squaredDifferences: np.ndarray = self.__squaredDifference(k)
-        return np.sqrt(np.mean(squaredDifferences))
-    
-
-    # method to find the VT for all possible values of k
-    def findVTForAllK(
+    # method to conbert the VT set to an array of doubles
+    def getVTSetAsArray(
             self
             ) -> np.ndarray:
-        vtValues: np.ndarray = np.zeros(len(self.kSet))
-        for i in range(len(self.kSet)):
-            vtValues[i] = self.__findVT(self.kSet[i])
-            print(f"VT for k = {self.kSet[i]}: {vtValues[i]}")
-        return vtValues
+        vtSetArrayPtr = self.lib.getVTSetArray(self.analysis)
+        vtSetSize = self.lib.getVTSetSize(self.analysis)
+        VTSetArray: np.ndarray = np.ctypeslib.as_array(
+            vtSetArrayPtr,
+            shape=(vtSetSize,))
+        return VTSetArray
 
 
 if __name__ == "__main__":
+    """
+    this script won't generate the  plot if it is run in a terminal. In the interactive 
+    window of VSCode, it generates the plot. However, the interpreter in the interactive
+    window needs to be restarted after each run of the script. Otherwise, it will throw an
+    error allocateMVTAnalysis() is an undefined symbol. I don't know why this happens. 
+    """
     import matplotlib.pyplot as plt
+    import sys
+    # compile the C++ code to a shared library
+    with chdir(os.path.join(os.path.dirname(__file__), "cFiles")):
+        os.system("g++ -O3 -fPIC -shared -std=c++17 findMVT.cpp MVTClass.hpp MVTClass.cpp -o findMVT.so")
     grbName: str = "GRB080319B"
     csvFilePath: str = f"data/processed/{grbName}LC.csv"
-    analysis = MVTAnalysis(grbName, csvFilePath)
-    #vt: np.ndarray = analysis.findVTForAllK()
+    analysis = analyseGRB(grbName, csvFilePath)
     fig, ax = plt.subplots()
-    ax.scatter(analysis.kSet, vt)
+    ax.plot(analysis.VTSet)
+    ax.set_ylabel('VT')
     ax.set_xscale('log')
     ax.set_yscale('log')
     ax.set_xlabel('k')
-    ax.set_ylabel('VT')
+    plt.show()

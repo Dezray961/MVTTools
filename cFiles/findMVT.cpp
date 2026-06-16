@@ -1,5 +1,5 @@
 /*
-g++ -fPIC -shared findMVT.cpp MVTClass.hpp -o findMVT.so
+g++ -fPIC -shared -std=c++17 -fopenmp findMVT.cpp MVTClass.hpp MVTClass.cpp -o findMVT.so
 */
 
 
@@ -25,6 +25,11 @@ extern "C" {
     int getVTSetSize(MVTAnalysis* analysis)
     {
         return analysis->kSetSize;
+    }
+
+    int* getKSetArray(MVTAnalysis* analysis)
+    {
+        return analysis->kSet.data();
     }
 }
 

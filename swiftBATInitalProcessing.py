@@ -13,7 +13,8 @@ def processSwiftBATData(
         SNRThreshold: float,
         energyBins: str,
         GRBName: str,
-        timeDeliniation: float = 0.0
+        timeDeliniation: float = 0.0,
+        fullDataSet: bool = False
         ) -> None:
     """_summary_
 
@@ -240,8 +241,11 @@ def processSwiftBATData(
     print("Extracting light curve")
     # find the start and stop time of the GRB from the catalogue
 
-    startTime, stopTime, t90Error = getStartStopTime(GRBName, data)
-    print(f"Start time: {startTime}, Stop time: {stopTime}, T90 error: {t90Error}")
+    if not fullDataSet:
+        startTime, stopTime, t90Error = getStartStopTime(GRBName, data)
+        timeString: str = f"tstart={startTime} tstop={stopTime} "
+    else:
+        timeString: str = ""
     # if the time deliniation is 0, use the SNR to determine the time bins
     if timeDeliniation != 0.0:
         timebinalg: str = "u"
@@ -250,7 +254,7 @@ def processSwiftBATData(
         timeDeliniationString = f"snrthresh={SNRThreshold} "
         timebinalg: str = "snr"
     # batbinevt infile={filename} outfile=onesec.lc outtype=LC timedel=1.0 timebinalg=u energybins=15-150 detmask=../hk/sw00306757000bdqcb.hk.gz clobber=YES
-    lightCurveCommand: str = f'batbinevt infile={file[:-3]} outfile=output.lc outtype=LC {timeDeliniationString}timebinalg={timebinalg} energybins={energyBins} detmask=../hk/sw{file.split("sw")[1].split("bev")[0]}bdqcb.hk.gz tstart={startTime} tstop={stopTime} clobber=YES'
+    lightCurveCommand: str = f'batbinevt infile={file[:-3]} outfile=output.lc outtype=LC {timeDeliniationString}timebinalg={timebinalg} energybins={energyBins} detmask=../hk/sw{file.split("sw")[1].split("bev")[0]}bdqcb.hk.gz {timeString}clobber=YES'
     shell.sendline(lightCurveCommand)
     if timebinalg == "snr":
         shell.expect('Histogram')

@@ -6,6 +6,11 @@
 #include <string>
 #include "MVTClass.hpp"
 
+namespace
+{
+    constexpr int kParallelThreshold = 64;
+}
+
 // constructor
 MVTAnalysis::MVTAnalysis
 (
@@ -80,11 +85,21 @@ std::vector<double> MVTAnalysis::localAverageOverKBinsForDataSet
     int k
 )
 {
-    std::vector<double> localAverages;
-    for (int i = k; i < lenghtOfData; i++)
+    const int dataPointCount = lenghtOfData - k;
+    std::vector<double> localAverages(dataPointCount);
+    if (dataPointCount <= 0)
     {
-        double localAverage = localAverageOverKBins(i, k);
-        localAverages.push_back(localAverage);
+        return localAverages;
+    }
+
+    const bool useParallel = k >= kParallelThreshold;
+
+#ifdef _OPENMP
+#pragma omp parallel for if(useParallel) schedule(static)
+#endif
+    for (int i = 0; i < dataPointCount; i++)
+    {
+        localAverages[i] = localAverageOverKBins(i + k, k);
     }
     return localAverages;
 };
@@ -96,11 +111,22 @@ std::vector<double> MVTAnalysis::squaredDifference
 )
 {
     std::vector<double> localAverages = localAverageOverKBinsForDataSet(k);
-    std::vector<double> squaredDifferences;
-    for (int i = k; i < lenghtOfData; i++)
+    const int dataPointCount = lenghtOfData - k;
+    std::vector<double> squaredDifferences(dataPointCount);
+    if (dataPointCount <= 0)
     {
-        double difference = rate[i] - localAverages[i - k];
-        squaredDifferences.push_back(pow(difference, 2));
+        return squaredDifferences;
+    }
+
+    const bool useParallel = k >= kParallelThreshold;
+
+#ifdef _OPENMP
+#pragma omp parallel for if(useParallel) schedule(static)
+#endif
+    for (int i = 0; i < dataPointCount; i++)
+    {
+        double difference = rate[i + k] - localAverages[i];
+        squaredDifferences[i] = difference * difference;
     }
     return squaredDifferences;
 };

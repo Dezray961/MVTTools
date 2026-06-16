@@ -32,6 +32,7 @@ class analyseGRB(GRBData):
             self.lengthOfData
             )
         self.VTSet: np.ndarray = self.getVTSetAsArray()
+        self.kSet: np.ndarray = self.getKSetAsArray()
 
 
     # method to hand the data to the C++ code and get the results back
@@ -53,6 +54,8 @@ class analyseGRB(GRBData):
         self.lib.getVTSetArray.restype = ctypes.POINTER(ctypes.c_double)
         self.lib.getVTSetSize.argtypes = [ctypes.c_void_p]
         self.lib.getVTSetSize.restype = ctypes.c_int
+        self.lib.getKSetArray.argtypes = [ctypes.c_void_p]
+        self.lib.getKSetArray.restype = ctypes.POINTER(ctypes.c_int)
 
 
     # method to conbert the VT set to an array of doubles
@@ -67,6 +70,18 @@ class analyseGRB(GRBData):
         return VTSetArray
 
 
+    # method to convert the k set to an array of integers
+    def getKSetAsArray(
+            self
+            ) -> np.ndarray:
+        kSetArrayPtr = self.lib.getKSetArray(self.analysis)
+        kSetSize = self.lib.getVTSetSize(self.analysis)
+        KSetArray: np.ndarray = np.ctypeslib.as_array(
+            kSetArrayPtr,
+            shape=(kSetSize,))
+        return KSetArray
+
+
 if __name__ == "__main__":
     """
     this script won't generate the  plot if it is run in a terminal. In the interactive 
@@ -78,12 +93,12 @@ if __name__ == "__main__":
     import sys
     # compile the C++ code to a shared library
     with chdir(os.path.join(os.path.dirname(__file__), "cFiles")):
-        os.system("g++ -O3 -fPIC -shared -std=c++17 findMVT.cpp MVTClass.hpp MVTClass.cpp -o findMVT.so")
+        os.system("g++ -O3 -fPIC -shared -std=c++17 -fopenmp findMVT.cpp MVTClass.hpp MVTClass.cpp -o findMVT.so")
     grbName: str = "GRB080319B"
     csvFilePath: str = f"data/processed/{grbName}LC.csv"
     analysis = analyseGRB(grbName, csvFilePath)
     fig, ax = plt.subplots()
-    ax.plot(analysis.VTSet)
+    ax.scatter(analysis.kSet, analysis.VTSet)
     ax.set_ylabel('VT')
     ax.set_xscale('log')
     ax.set_yscale('log')

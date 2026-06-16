@@ -1,5 +1,8 @@
 """
-download currently commented out.
+This needs to be split into a terminal running script with a class that can be imported into other
+scripts. It also needs to use 'with chdir()' to change the working directory rather than using 
+os as it will automatically change back to the original working directory when the block is exited.
+Further, the SwiftBAT tools should be in their own directory.
 """
 
 import swiftBATCatalogueGRB as catalogue
@@ -18,7 +21,8 @@ def processSwiftBATData(
         energyRange: str,
         timeBinSize: float = 0.0,
         download: bool = False,
-        deleteOriginal: bool = False
+        deleteOriginal: bool = False,
+        fullDataSet: bool = False
         ) -> None:
     """Processes the data for a given GRB name into a usable format for analysis. This includes downloading the data from the swift.ac.uk archive, unzipping the data if it is compressed, and using the HEASoft tools to process the data into light curves for different energy ranges.
 
@@ -43,7 +47,7 @@ def processSwiftBATData(
         directory: str = filename.rsplit("/", 1)[0]
         # open a shell
         with chdir(directory):
-            shell = pexpect.spawn("sh", encoding='utf-8')
+            shell = pexpect.spawn("sh", encoding = 'utf-8')
             logFile = open('shellOutput.txt', 'w')
             shell.logfile_read = logFile
             # initilaise the HEASoft tools
@@ -53,12 +57,12 @@ def processSwiftBATData(
             shell.expect('headas-init.sh') 
             # run the command to convert the light curve data into a CSV file
             shell.sendline('fdump output.lc outfile=output.txt prhead=no clobber=yes && echo Done')
-            shell.expect('fdump output')
+            shell.expect('fdump output', timeout = None)
             shell.expect('(?i)Names')
             shell.send('\n')
             shell.expect('(?i)Lists')
             shell.send('\n')
-            shell.expect('Done')
+            shell.expect('Done', timeout = None)
             shell.close()
         
         # create a new file path for the CSV file
@@ -113,7 +117,14 @@ def processSwiftBATData(
 
     # process the data using the HEASoft tools to generate light curves for the specified energy range and time bin size
     print(f"Processing data for {GRBName}...")
-    processing.processSwiftBATData(dataFilePath, SNRThreshold, energyRange, GRBName, timeBinSize)
+    processing.processSwiftBATData(
+        filename = dataFilePath,
+        SNRThreshold = SNRThreshold,
+        energyBins = energyRange,
+        GRBName = GRBName,
+        timeDeliniation = timeBinSize,
+        fullDataSet = fullDataSet
+    )
     print("Processing complete.")
 
     # convert the processed data into a CSV file for analysis
@@ -129,4 +140,12 @@ def processSwiftBATData(
 
 if __name__ == "__main__":
     grbName: str = "GRB080319B"
-    processSwiftBATData(grbName, 5.0, "15-350", download=False, deleteOriginal=False)
+    processSwiftBATData(
+        GRBName = grbName,
+        SNRThreshold = 5.0,
+        energyRange = "15-350",
+        download = False,
+        deleteOriginal = False,
+        timeBinSize = 100e-6,
+        fullDataSet = True
+        )

@@ -36,10 +36,14 @@ class GRBData:
         # itself; rather convert the columns to numpy arrays and operate on those instead, then put
         # the results back into the DataFrame if needed.
         self.data: pd.DataFrame = pd.read_csv(self.CSVfilePath)
-        # set the index to be the first column
-        self.data.set_index(self.data.columns[0], inplace=True)
-        #remove the first column name
-        self.data.index.name = None
+        # If the CSV already contains a 'time' column, do not replace it by setting
+        # the first column as the index. Some CSVs have an unnamed leading index
+        # column, in which case keep the existing behaviour.
+        if 'time' not in self.data.columns:
+            # set the index to be the first column
+            self.data.set_index(self.data.columns[0], inplace=True)
+            # remove the first column name
+            self.data.index.name = None
         # convert all the data to numeric, coercing errors to NaN
 
         for column in self.data.columns:

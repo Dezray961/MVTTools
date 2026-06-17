@@ -43,6 +43,57 @@ def processSwiftBATData(
             filename: str,
             GRBName: str
             ) -> None:
+        # function to run fdump
+        def runFdump(
+                shell: pexpect.spawn,
+                filename: str
+                ) -> None:
+            # run the command to convert the light curve data into a CSV file
+            shell.sendline(f'fdump {filename}.lc outfile={filename}.txt prhead=no clobber=yes && echo Done')
+            shell.expect(f'fdump {filename}', timeout = None)
+            shell.expect('(?i)Names')
+            shell.send('\n')
+            shell.expect('(?i)Lists')
+            shell.send('\n')
+            shell.expect('Done', timeout = None)
+
+
+        # function to read in the data, find the gap lines and return the data blocks as pandas DataFrames
+        def linesToDataFrames(
+                directory: str,
+                filename: str
+                ) -> tuple[pd.DataFrame, pd.DataFrame]:
+            with open(f'{directory}/{filename}.txt', 'r') as outputFile:
+                lines: list[str] = outputFile.readlines()
+            # find the gap lines
+            gapLines: list[int] = [i for i, line in enumerate(lines) if not line.strip()]
+            # The first two are blank, the data rows are between the 2nd and 3rd, and the 3rd and 4th
+            block1Lines: list[str] = lines[gapLines[1]:gapLines[2]]
+            block2Lines: list[str] = lines[gapLines[2]:gapLines[3]]
+            # clean the data and convert it into pandas DataFrames
+            cleanedBlock1Lines: pd.DataFrame = linesToDataFrame(block1Lines)
+            cleanedBlock2Lines: pd.DataFrame = linesToDataFrame(block2Lines)
+            return cleanedBlock1Lines, cleanedBlock2Lines
+
+
+        # function to clean the data and convert it into a pandas DataFrame
+        def linesToDataFrame(lines: list[str]) -> pd.DataFrame:
+            data = [line.strip().split() for line in lines if line.strip()]
+            # change the column names to lower case and remove the units
+            data[0] = [col.split('(')[0].lower() for col in data[0]]
+            data.pop(1)
+            # seperate the index column into a separate list
+            indexList = [row[0] for row in data[1:]]
+            for i, list in enumerate(data):
+                if i == 0:
+                    continue
+                list.pop(0)
+            
+                    
+            return pd.DataFrame(data[1:], columns=data[0], index=indexList)
+
+
+
         # split the filename to get the directory
         directory: str = filename.rsplit("/", 1)[0]
         # open a shell
@@ -55,50 +106,30 @@ def processSwiftBATData(
             shell.expect('CALDB/software/tools/caldbinit.sh') 
             shell.sendline('source $HEADAS/headas-init.sh')
             shell.expect('headas-init.sh') 
-            # run the command to convert the light curve data into a CSV file
-            shell.sendline('fdump output.lc outfile=output.txt prhead=no clobber=yes && echo Done')
-            shell.expect('fdump output', timeout = None)
-            shell.expect('(?i)Names')
-            shell.send('\n')
-            shell.expect('(?i)Lists')
-            shell.send('\n')
-            shell.expect('Done', timeout = None)
+            # run the command to convert the pre-burst light curve data into a CSV file
+            runFdump(shell, f"outputPB")
+            # run the command to convert the burst light curve data into a CSV file
+            runFdump(shell, f"output")
             shell.close()
         
         # create a new file path for the CSV file
         Path('data/processed').mkdir(parents=True, exist_ok=True)
         csvFilePath: str = f"data/processed/{GRBName}LC.csv"
+
+        # read the pre-burst output.txt file and calculate the standard deviation of the count rate
+        preBurstData, _ = linesToDataFrames(directory, "outputPB")
+        preBurstStdDev: float = preBurstData['rate'].astype(float).std()
+        print(f"Standard deviation of the pre-burst count rate: {preBurstStdDev}")
+
         # read the output.txt file and write the data to the new CSV file
-        with open(f'{directory}/output.txt', 'r') as outputFile, open(csvFilePath, 'w') as csvFile:
-            lines: list[str] = outputFile.readlines()
-
-        # find the gap lines
-        gapLines: list[int] = [i for i, line in enumerate(lines) if not line.strip()]
-        # The first two are blank, the data rows are between the 2nd and 3rd, and the 3rd and 4th
-        block1Lines: list[str] = lines[gapLines[1]:gapLines[2]]
-        block2Lines: list[str] = lines[gapLines[2]:gapLines[3]]
-        # clean the data
-        def linesToDataFrame(lines: list[str]) -> list[str]:
-            data = [line.strip().split() for line in lines if line.strip()]
-            # change the column names to lower case and remove the units
-            data[0] = [col.split('(')[0].lower() for col in data[0]]
-            data.pop(1)
-            # seperate the index column into a separate list
-            indexList = [row[0] for row in data[1:]]
-            for i, list in enumerate(data):
-                if i == 0:
-                    continue
-                list.pop(0)
-                    
-            return pd.DataFrame(data[1:], columns=data[0], index=indexList)
-        
-
-        cleanedBlock1Lines: list[str] = linesToDataFrame(block1Lines)
-        cleanedBlock2Lines: list[str] = linesToDataFrame(block2Lines)
+        burstData1, burstData2 = linesToDataFrames(directory, "output")
 
         # combine the two blocks of data side by side, using the index to align the rows
-        mergedData: pd.DataFrame = pd.concat([cleanedBlock1Lines, cleanedBlock2Lines], axis=1)
-        mergedData.to_csv(csvFilePath)
+        mergedData: pd.DataFrame = pd.concat([burstData1, burstData2], axis=1)
+
+        # filter the data to only include rows where the count rate is greater than the standard deviation of the pre-burst count rate
+        filteredData: pd.DataFrame = mergedData.where(mergedData['rate'].astype(float) > preBurstStdDev).dropna()
+        filteredData.to_csv(csvFilePath, index=False)
 
 
     # generate the wget statement to download the data for the given GRB name
@@ -147,5 +178,5 @@ if __name__ == "__main__":
         download = False,
         deleteOriginal = False,
         #timeBinSize = 100e-6,
-        fullDataSet = True
+        fullDataSet = False
         )

@@ -238,11 +238,22 @@ def processSwiftBATData(
         correctMask(shell, file, data)
 
     # 5. Extract the light curve from the data
-    print("Extracting light curve")
     # find the start and stop time of the GRB from the catalogue
 
+    # get the start and stop time of the GRB from the catalogue
+    startTime, stopTime, t90Error = getStartStopTime(GRBName, data)
+
+    # get the light curve for the pre-burst data
+    print("Extracting pre-burst light curve")
+    lightCurveCommand: str = f'batbinevt infile={file[:-3]} outfile=outputPB.lc outtype=LC timedel=0.0001 timebinalg=u energybins={energyBins} detmask=../hk/sw{file.split("sw")[1].split("bev")[0]}bdqcb.hk.gz tstart={startTime-30} tstop={startTime} clobber=YES'
+    shell.sendline(lightCurveCommand)
+    shell.expect('batbinevt v')
+    shell.expect(['ERROR', 'written'])
+    shell.expect('----')
+
+    print("Extracting the burst light curve")
+
     if not fullDataSet:
-        startTime, stopTime, t90Error = getStartStopTime(GRBName, data)
         timeString: str = f"tstart={startTime} tstop={stopTime} "
     else:
         timeString: str = ""

@@ -29,10 +29,7 @@ class MVTAnalysis
             bool generateEvenKSetFlag
         );
         // function to find the VT for all k in the k set
-        std::vector<double> findVTForAllK
-        (
-            std::vector<std::vector<double>> dataSet
-        );
+        std::vector<double> findVTForAllK();
         // function to conbvert the VT set to an array of doubles
         double* getVTSetAsArray();
     private:
@@ -44,42 +41,15 @@ class MVTAnalysis
         // function to generate a kSet if the user wants all even numbers between 1 and kMax
         void generateEvenKSet();
         // function to find Δt for a given k
-        void findDeltaTSet
-        (
-            std::vector<std::vector<double>> dataSet
-        );
+        void findDeltaTSet();
         // function to find the local average over k samples
-        double localAverageOverKBins
-        (
-            std::vector<std::vector<double>> dataSet,
-            int index,
-            int k
-        );
+        double localAverageOverKBins(int index, int k);
         // function to find the local average over k samples for the entire data set
-        std::vector<double> localAverageOverKBinsForDataSet
-        (
-            std::vector<std::vector<double>> dataSet,
-            int k
-        );
+        std::vector<double> localAverageOverKBinsForDataSet(int k);
         // function to find the square of the difference between local averages
-        std::vector<double> squaredDifference
-        (
-            std::vector<std::vector<double>> dataSet,
-            int k
-        );
+        std::vector<double> squaredDifference(int k);
         // function to find the VT from the square of the difference between local averages
-        double findVT
-        (
-            std::vector<std::vector<double>> dataSet,
-            int k
-        );
-        // function to permute the data set
-        std::vector<std::vector<double>> permuteDataSet
-        (
-            int index
-        );
-        // function to loop trhough N permutations of the data set and find the VT for each permutation
-        void findVTForPermutations();
+        double findVT(int k);
 };
 
 #endif // FINDMVT_HPP

@@ -1,3 +1,6 @@
+// Part of the way through converting this to permute the data and calculate the average VT for each VT
+
+
 #include <stdio.h>
 #include <vector>
 #include <string>
@@ -6,6 +9,7 @@
 #include <string>
 #include "MVTClass.hpp"
 #include <algorithm>
+#include <bits/stdc++.h>
 
 namespace
 {
@@ -39,11 +43,6 @@ MVTAnalysis::MVTAnalysis
         findKSet();
     }
     findDeltaTSet();
-    this->kSetSize = kSet.size();
-    this->VTSet = findVTForAllK();
-    this->VTSetArray = getVTSetAsArray();
-
-    localAverageOverKBinsForDataSet(4);
 };
         
 
@@ -82,7 +81,10 @@ void MVTAnalysis::generateEvenKSet()
 
 
 // function to find Δt for a given k
-void MVTAnalysis::findDeltaTSet()
+void MVTAnalysis::findDeltaTSet
+(
+    std::vector<std::vector<double>> dataSet
+)
 {
     // itterate through the k set and calculate Δt for each k
     for (int k : kSet)
@@ -91,7 +93,7 @@ void MVTAnalysis::findDeltaTSet()
         // calculate the differences between time values for the given k
         for (int i = k; i < lenghtOfData; i++)
         {
-            double difference = time[i] - time[i - k];
+            double difference = dataSet[1][i] - dataSet[1][i - k];
             differenceList.push_back(difference);
         }
         // calculate the mean of the differences
@@ -125,6 +127,7 @@ void MVTAnalysis::findDeltaTSet()
 // function to find the local average over k samples
 double MVTAnalysis::localAverageOverKBins
 (
+    std::vector<std::vector<double>> dataSet,
     int index,
     int k
 )
@@ -133,8 +136,8 @@ double MVTAnalysis::localAverageOverKBins
     for (int i = 0; i < k; i++)
     {
         int interiorIndex = index - i;
-        double interiorRate = rate[interiorIndex];
-        summationList.push_back(rate[interiorIndex]);
+        double interiorRate = dataSet[0][interiorIndex];
+        summationList.push_back(interiorRate);
     }
     return std::reduce(summationList.begin(), summationList.end(), 0.0) / k;
 };
@@ -143,6 +146,7 @@ double MVTAnalysis::localAverageOverKBins
 // function to find the local average over k samples for the entire data set
 std::vector<double> MVTAnalysis::localAverageOverKBinsForDataSet
 (
+    std::vector<std::vector<double>> dataSet,
     int k
 )
 {
@@ -160,7 +164,7 @@ std::vector<double> MVTAnalysis::localAverageOverKBinsForDataSet
 #endif
     for (int i = 0; i < dataPointCount; i++)
     {
-        localAverages[i] = localAverageOverKBins(i + k, k);
+        localAverages[i] = localAverageOverKBins(dataSet, i + k, k);
     }
     return localAverages;
 };
@@ -168,10 +172,11 @@ std::vector<double> MVTAnalysis::localAverageOverKBinsForDataSet
 // function to find the square of the difference between local averages
 std::vector<double> MVTAnalysis::squaredDifference
 (
+    std::vector<std::vector<double>> dataSet,
     int k
 )
 {
-    std::vector<double> localAverages = localAverageOverKBinsForDataSet(k);
+    std::vector<double> localAverages = localAverageOverKBinsForDataSet(dataSet, k);
     const int dataPointCount = lenghtOfData - k;
     std::vector<double> squaredDifferences(dataPointCount);
     if (dataPointCount <= 0)
@@ -196,22 +201,26 @@ std::vector<double> MVTAnalysis::squaredDifference
 // function to find the VT from the square of the difference between local averages
 double MVTAnalysis::findVT
 (
+    std::vector<std::vector<double>> dataSet,
     int k
 )
 {
-    std::vector<double> squaredDifferences = squaredDifference(k);
+    std::vector<double> squaredDifferences = squaredDifference(dataSet, k);
     double sumOfSquaredDifferences = std::reduce(squaredDifferences.begin(), squaredDifferences.end(), 0.0);
     return sqrt(sumOfSquaredDifferences / (lenghtOfData - k));
 };
 
 
 // function to find the VT for all k in the k set
-std::vector<double> MVTAnalysis::findVTForAllK()
+std::vector<double> MVTAnalysis::findVTForAllK
+(
+    std::vector<std::vector<double>> dataSet
+)
 {
     std::vector<double> VTSet;
     for (int k : kSet)
     {
-        VTSet.push_back(findVT(k));
+        VTSet.push_back(findVT(dataSet, k));
     }
     return VTSet;
 };
@@ -230,3 +239,28 @@ double* MVTAnalysis::getVTSetAsArray()
 };
 
 
+// function to create a permuted version of the data set by rotating the data set by a given index
+std::vector<std::vector<double>> MVTAnalysis::permuteDataSet(
+    int index
+)
+{
+    // rotate the data set by the index to the left
+    std::vector<double> permutedRate = rate;
+    std::rotate(permutedRate.begin(), permutedRate.begin() + index, permutedRate.end());
+    std::vector<double> permutedTime = time;
+    std::rotate(permutedTime.begin(), permutedTime.begin() + index, permutedTime.end());
+    std::vector<double> permutedRateErr = rateErr;
+    std::rotate(permutedRateErr.begin(), permutedRateErr.begin() + index, permutedRateErr.end());
+    return {permutedRate, permutedTime, permutedRateErr};
+};
+
+
+// function to loop trhough N permutations of the data set and find the VT for each permutation
+void MVTAnalysis::findVTForPermutations()
+{
+    for (int index = 0; index < lenghtOfData; index++)
+    {
+        std::vector<std::vector<double>> permutedDataSet = permuteDataSet(index);
+        
+    }
+}

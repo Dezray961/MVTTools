@@ -11,45 +11,71 @@ class MVTAnalysis
         std::vector<double> time;
         std::vector<double> rateErr;
         int lenghtOfData;
-        int kMax;
-        std::vector<int> kSet;
         std::vector<double> VTSet;
-        double* VTSetArray;
-        int kSetSize;
-        std::vector<double> deltaT;
-        std::vector<double> deltaTError;
+        std::vector<int> kSet;
 
         // constructor
         MVTAnalysis
         (
-            double *rateArray,
-            double *timeArray,
-            double *rateErrArray,
+            std::vector<double> rateArray,
+            std::vector<double> timeArray,
+            std::vector<double> rateErrArray,
             int lenghtOfData,
-            bool generateEvenKSetFlag
+            std::vector<int> kSet,
+            int kMax
         );
-        // function to find the VT for all k in the k set
-        std::vector<double> findVTForAllK();
-        // function to conbvert the VT set to an array of doubles
-        double* getVTSetAsArray();
+        /**
+         * Constructs a MVTAnalysis object with the given data arrays and parameters.
+         * @param rateArray Pointer to an array of rate values.
+         * @param timeArray Pointer to an array of time values.
+         * @param rateErrArray Pointer to an array of rate error values.
+         * @param lenghtOfData The length of the data arrays.
+         * @param kSet A vector of k values to use for the analysis.
+         * @param kMax The maximum value of k to use for the analysis.
+         * @return A MVTAnalysis object with the given data and parameters.
+         */
+
+
     private:
         // private member functions
-        // function to find kMax
-        void findKMax();
-        // function to find the k set
-        void findKSet();
-        // function to generate a kSet if the user wants all even numbers between 1 and kMax
-        void generateEvenKSet();
-        // function to find Δt for a given k
-        void findDeltaTSet();
-        // function to find the local average over k samples
         double localAverageOverKBins(int index, int k);
-        // function to find the local average over k samples for the entire data set
+        /**
+         * Finds the local average over k samples for a given index.
+         * @param index The index of the data point to calculate the local average for.
+         * @param k The number of samples to use for the local average.
+         * @return The local average over k samples for the given index.
+         */
+
+
         std::vector<double> localAverageOverKBinsForDataSet(int k);
-        // function to find the square of the difference between local averages
+        /**
+         * Finds the local average over k samples for the entire data set.
+         * @param k The number of samples to use for the local average.
+         * @return A vector of local averages over k samples for the entire data set.
+         */
+
+
         std::vector<double> squaredDifference(int k);
-        // function to find the VT from the square of the difference between local averages
+        /**
+         * Finds the square of the difference between local averages for a given k.
+         * @param k The number of samples to use for the local average.
+         * @return A vector of squared differences between local averages for the given k.
+         */
+
+         
         double findVT(int k);
+        /**
+         * Finds the VT from the square of the difference between local averages for a given k.
+         * @param k The number of samples to use for the local average.
+         * @return The VT value for the given k.
+         */
+
+
+        void findVTForAllK();
+        /**
+         * Finds the VT for all k in the k set.
+         * @return A vector of VT values for all k in the k set.
+         */
 };
 
 #endif // FINDMVT_HPP

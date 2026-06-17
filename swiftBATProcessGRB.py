@@ -147,5 +147,5 @@ if __name__ == "__main__":
         download = False,
         deleteOriginal = False,
         timeBinSize = 100e-6,
-        fullDataSet = True
+        fullDataSet = False
         )

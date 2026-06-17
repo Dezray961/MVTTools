@@ -5,6 +5,7 @@
 #include <numeric>
 #include <string>
 #include "MVTClass.hpp"
+#include <algorithm>
 
 namespace
 {
@@ -29,6 +30,7 @@ MVTAnalysis::MVTAnalysis
     }
     findKMax();
     findKSet();
+    findDeltaTSet();
     this->kSetSize = kSet.size();
     this->VTSet = findVTForAllK();
     this->VTSetArray = getVTSetAsArray();
@@ -60,6 +62,46 @@ void MVTAnalysis::findKSet()
 };
 
 
+// function to find Δt for a given k
+void MVTAnalysis::findDeltaTSet()
+{
+    // itterate through the k set and calculate Δt for each k
+    for (int k : kSet)
+    {
+        std::vector<double> differenceList; // list to store the differences between time values
+        // calculate the differences between time values for the given k
+        for (int i = k; i < lenghtOfData; i++)
+        {
+            double difference = time[i] - time[i - k];
+            differenceList.push_back(difference);
+        }
+        // calculate the mean of the differences
+        double meanDeltaT = std::reduce(differenceList.begin(), differenceList.end(), 0.0) / (lenghtOfData - k);
+        this->deltaT.push_back(meanDeltaT);
+        // calculate the standard deviation of the differences
+        // create a new vector to store the differences between each difference and the mean
+        std::vector<double> deltaTDifferenceList(differenceList.size());
+        std::transform // applies a function to each element in the input range and stores the result in the output range
+        (
+            differenceList.begin(), // input range
+            differenceList.end(), // input range
+            deltaTDifferenceList.begin(), // output range
+            [meanDeltaT](double difference) { return difference - meanDeltaT; } // lambda function
+        );
+        // calculate the sum of the squared differences
+        double sumOfSquaredDifferences = std::inner_product(
+            deltaTDifferenceList.begin(),
+            deltaTDifferenceList.end(),
+            deltaTDifferenceList.begin(),
+            0.0
+        );
+        // calculate the standard deviation
+        double standardDeviation = sqrt(sumOfSquaredDifferences / deltaTDifferenceList.size());
+        // store the standard deviation in the deltaTError vector
+        this->deltaTError.push_back(standardDeviation);
+    }
+}
+
 
 // function to find the local average over k samples
 double MVTAnalysis::localAverageOverKBins
@@ -75,7 +117,7 @@ double MVTAnalysis::localAverageOverKBins
         double interiorRate = rate[interiorIndex];
         summationList.push_back(rate[interiorIndex]);
     }
-    return std::accumulate(summationList.begin(), summationList.end(), 0.0) / k;
+    return std::reduce(summationList.begin(), summationList.end(), 0.0) / k;
 };
 
 
@@ -139,7 +181,7 @@ double MVTAnalysis::findVT
 )
 {
     std::vector<double> squaredDifferences = squaredDifference(k);
-    double sumOfSquaredDifferences = std::accumulate(squaredDifferences.begin(), squaredDifferences.end(), 0.0);
+    double sumOfSquaredDifferences = std::reduce(squaredDifferences.begin(), squaredDifferences.end(), 0.0);
     return sqrt(sumOfSquaredDifferences / (lenghtOfData - k));
 };
 

@@ -16,6 +16,8 @@ class MVTAnalysis
         std::vector<double> VTSet;
         double* VTSetArray;
         int kSetSize;
+        std::vector<double> deltaT;
+        std::vector<double> deltaTError;
 
         // constructor
         MVTAnalysis
@@ -35,6 +37,8 @@ class MVTAnalysis
         void findKMax();
         // function to find the k set
         void findKSet();
+        // function to find Δt for a given k
+        void findDeltaTSet();
         // function to find the local average over k samples
         double localAverageOverKBins(int index, int k);
         // function to find the local average over k samples for the entire data set

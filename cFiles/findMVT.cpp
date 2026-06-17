@@ -31,6 +31,16 @@ extern "C" {
     {
         return analysis->kSet.data();
     }
+
+    double* getDeltaTArray(MVTAnalysis* analysis)
+    {
+        return analysis->deltaT.data();
+    }
+
+    double* getDeltaTErrorArray(MVTAnalysis* analysis)
+    {
+        return analysis->deltaTError.data();
+    }
 }
 
 int main()

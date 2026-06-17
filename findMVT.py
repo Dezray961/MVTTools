@@ -33,6 +33,8 @@ class analyseGRB(GRBData):
             )
         self.VTSet: np.ndarray = self.getVTSetAsArray()
         self.kSet: np.ndarray = self.getKSetAsArray()
+        self.deltaT: np.ndarray = self.getDeltaTAsArray()
+        self.deltaTError: np.ndarray = self.getDeltaTErrorAsArray()
 
 
     # method to hand the data to the C++ code and get the results back
@@ -47,7 +49,7 @@ class analyseGRB(GRBData):
             ctypes.POINTER(ctypes.c_double),
             ctypes.POINTER(ctypes.c_double),
             ctypes.POINTER(ctypes.c_double),
-            ctypes.c_int
+            ctypes.c_int,
         ]
         self.lib.allocateMVTAnalysis.restype = ctypes.c_void_p
         self.lib.getVTSetArray.argtypes = [ctypes.c_void_p]
@@ -56,6 +58,10 @@ class analyseGRB(GRBData):
         self.lib.getVTSetSize.restype = ctypes.c_int
         self.lib.getKSetArray.argtypes = [ctypes.c_void_p]
         self.lib.getKSetArray.restype = ctypes.POINTER(ctypes.c_int)
+        self.lib.getDeltaTArray.argtypes = [ctypes.c_void_p]
+        self.lib.getDeltaTArray.restype = ctypes.POINTER(ctypes.c_double)
+        self.lib.getDeltaTErrorArray.argtypes = [ctypes.c_void_p]
+        self.lib.getDeltaTErrorArray.restype = ctypes.POINTER(ctypes.c_double)
 
 
     # method to conbert the VT set to an array of doubles
@@ -80,6 +86,30 @@ class analyseGRB(GRBData):
             kSetArrayPtr,
             shape=(kSetSize,))
         return KSetArray
+    
+
+    # method to convert the deltaT set to an array of doubles
+    def getDeltaTAsArray(
+            self
+            ) -> np.ndarray:
+        deltaTArrayPtr = self.lib.getDeltaTArray(self.analysis)
+        deltaTSize = self.lib.getVTSetSize(self.analysis)
+        DeltaTArray: np.ndarray = np.ctypeslib.as_array(
+            deltaTArrayPtr,
+            shape=(deltaTSize,))
+        return DeltaTArray
+
+
+    # method to convert the deltaTError set to an array of doubles
+    def getDeltaTErrorAsArray(
+            self
+            ) -> np.ndarray:
+        deltaTErrorArrayPtr = self.lib.getDeltaTErrorArray(self.analysis)
+        deltaTErrorSize = self.lib.getVTSetSize(self.analysis)
+        DeltaTErrorArray: np.ndarray = np.ctypeslib.as_array(
+            deltaTErrorArrayPtr,
+            shape=(deltaTErrorSize,))
+        return DeltaTErrorArray
 
 
 if __name__ == "__main__":
@@ -98,9 +128,12 @@ if __name__ == "__main__":
     csvFilePath: str = f"data/processed/{grbName}LC.csv"
     analysis = analyseGRB(grbName, csvFilePath)
     fig, ax = plt.subplots()
-    ax.scatter(analysis.kSet, analysis.VTSet)
+    ax.scatter(
+        analysis.deltaT,
+        analysis.VTSet,
+        color='blue')
     ax.set_ylabel('VT')
-    ax.set_xscale('log')
     ax.set_yscale('log')
-    ax.set_xlabel('k')
+    ax.set_xscale('log')
+    ax.set_xlabel('$\\Delta t$')
     plt.show()

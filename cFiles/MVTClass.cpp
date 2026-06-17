@@ -18,7 +18,8 @@ MVTAnalysis::MVTAnalysis
     double *rateArray,
     double *timeArray,
     double *rateErrArray,
-    int lenghtOfData
+    int lenghtOfData,
+    bool generateEvenKSetFlag
 )
 {
     this->lenghtOfData = lenghtOfData;
@@ -29,7 +30,14 @@ MVTAnalysis::MVTAnalysis
         this->rateErr.push_back(rateErrArray[i]);
     }
     findKMax();
-    findKSet();
+    if (generateEvenKSetFlag)
+    {
+        generateEvenKSet();
+    }
+    else
+    {
+        findKSet();
+    }
     findDeltaTSet();
     this->kSetSize = kSet.size();
     this->VTSet = findVTForAllK();
@@ -58,6 +66,17 @@ void MVTAnalysis::findKSet()
     {
         this->kSet.push_back(number);
         number *= 2;
+    }
+};
+
+
+// function to generate a kSet if the user wants all even numbers between 1 and kMax
+void MVTAnalysis::generateEvenKSet()
+{
+    this->kSet = std::vector<int>();
+    for (int number = 2; number <= kMax; number += 2)
+    {
+        this->kSet.push_back(number);
     }
 };
 

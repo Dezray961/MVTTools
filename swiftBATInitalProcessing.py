@@ -251,14 +251,14 @@ def processSwiftBATData(
         timebinalg: str = "u"
         timeDeliniationString: str = f"timedel={timeDeliniation} "
     else:
-        timeDeliniationString = f"snrthresh={SNRThreshold} "
+        timeDeliniationString = f"snrthresh={SNRThreshold} timedel=0 "
         timebinalg: str = "snr"
     # batbinevt infile={filename} outfile=onesec.lc outtype=LC timedel=1.0 timebinalg=u energybins=15-150 detmask=../hk/sw00306757000bdqcb.hk.gz clobber=YES
     lightCurveCommand: str = f'batbinevt infile={file[:-3]} outfile=output.lc outtype=LC {timeDeliniationString}timebinalg={timebinalg} energybins={energyBins} detmask=../hk/sw{file.split("sw")[1].split("bev")[0]}bdqcb.hk.gz {timeString}clobber=YES'
     shell.sendline(lightCurveCommand)
-    if timebinalg == "snr":
-        shell.expect('Histogram')
-        shell.send('\n')
+#    if timebinalg == "snr":
+#        shell.expect('Histogram')
+#        shell.send('\n')
     shell.expect('batbinevt v')
     shell.expect(['ERROR', 'written'])
     shell.expect('----')

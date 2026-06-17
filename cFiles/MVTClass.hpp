@@ -25,7 +25,8 @@ class MVTAnalysis
             double *rateArray,
             double *timeArray,
             double *rateErrArray,
-            int lenghtOfData
+            int lenghtOfData,
+            bool generateEvenKSetFlag
         );
         // function to find the VT for all k in the k set
         std::vector<double> findVTForAllK();
@@ -37,6 +38,8 @@ class MVTAnalysis
         void findKMax();
         // function to find the k set
         void findKSet();
+        // function to generate a kSet if the user wants all even numbers between 1 and kMax
+        void generateEvenKSet();
         // function to find Δt for a given k
         void findDeltaTSet();
         // function to find the local average over k samples

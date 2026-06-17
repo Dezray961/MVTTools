@@ -72,7 +72,7 @@ class GRBData:
             self
             ) -> None:
         rate: np.ndarray = self.data['rate'].to_numpy()
-        logRate: np.ndarray = np.log(rate)
+        logRate: np.ndarray = np.log(np.abs(rate))
         self.data['logRate'] = logRate
 
 

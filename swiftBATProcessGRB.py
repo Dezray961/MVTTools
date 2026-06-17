@@ -146,6 +146,6 @@ if __name__ == "__main__":
         energyRange = "15-350",
         download = False,
         deleteOriginal = False,
-        timeBinSize = 100e-6,
-        fullDataSet = False
+        #timeBinSize = 100e-6,
+        fullDataSet = True
         )

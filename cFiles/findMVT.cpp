@@ -11,10 +11,11 @@ extern "C" {
         double *rate,
         double *time,
         double *rateErr,
-        int lenghtOfData
+        int lenghtOfData,
+        bool generateEvenKSetFlag
     )
     {
-        return new MVTAnalysis(rate, time, rateErr, lenghtOfData);
+        return new MVTAnalysis(rate, time, rateErr, lenghtOfData, generateEvenKSetFlag);
     }
 
     double* getVTSetArray(MVTAnalysis* analysis)

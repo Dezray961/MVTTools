@@ -27,16 +27,14 @@ class analyseGRB(GRBData):
     def __init__(self,
                  name: str,
                  CSVfilePath: str,
+                 evenKSet: bool = False
                  ) -> None:
         super().__init__(name, CSVfilePath)
         self.lengthOfData: int = len(self.data)
         # create a pointer to the MVTAnalysis class
         self.cWrapper()
-        rate: np.ndarray = np.ascontiguousarray(self.data['rate'].to_numpy(), dtype=np.float64)
-        time: np.ndarray = np.ascontiguousarray(self.data['time'].to_numpy(), dtype=np.float64)
-        rateErr: np.ndarray = np.ascontiguousarray(self.data['error'].to_numpy(), dtype=np.float64)
         # run the C++ code to get the results back
-        self.runAnalysis()
+        self.runAnalysis(evenKSet)
 
 
     # method to hand the data to the C++ code and get the results back
@@ -52,6 +50,7 @@ class analyseGRB(GRBData):
             ctypes.POINTER(ctypes.c_double),
             ctypes.POINTER(ctypes.c_double),
             ctypes.c_int,
+            ctypes.c_bool
         ]
         self.lib.allocateMVTAnalysis.restype = ctypes.c_void_p
         self.lib.getVTSetArray.argtypes = [ctypes.c_void_p]
@@ -69,13 +68,15 @@ class analyseGRB(GRBData):
     # method to run the C++ code to get the results back
     @timeit
     def runAnalysis(
-            self
+            self,
+            evenKSet: bool
             ) -> None:
         self.analysis = self.lib.allocateMVTAnalysis(
-            self.data['rate'].to_numpy().ctypes.data_as(ctypes.POINTER(ctypes.c_double)),
+            self.data['logRate'].to_numpy().ctypes.data_as(ctypes.POINTER(ctypes.c_double)),
             self.data['time'].to_numpy().ctypes.data_as(ctypes.POINTER(ctypes.c_double)),
             self.data['error'].to_numpy().ctypes.data_as(ctypes.POINTER(ctypes.c_double)),
-            self.lengthOfData
+            self.lengthOfData,
+            ctypes.c_bool(evenKSet)
             )
         self.VTSet: np.ndarray = self.getVTSetAsArray()
         self.kSet: np.ndarray = self.getKSetAsArray()
@@ -140,19 +141,29 @@ if __name__ == "__main__":
     """
     import matplotlib.pyplot as plt
     import sys
+
+
+    # plotting function
+    def plotVTvsDeltaT()-> None:
+        fig, ax = plt.subplots()
+        ax.errorbar(
+            analysis.deltaT,
+            analysis.VTSet,
+            xerr=analysis.deltaTError,
+            ls='none',
+            marker='x',
+            color='blue')
+        ax.set_ylabel('VT')
+        ax.set_yscale('log')
+        ax.set_xscale('log')
+        ax.set_xlabel('$\\Delta t$')
+        plt.show()
+
+
     # compile the C++ code to a shared library
     with chdir(os.path.join(os.path.dirname(__file__), "cFiles")):
         os.system("g++ -O3 -fPIC -shared -std=c++17 -fopenmp findMVT.cpp MVTClass.hpp MVTClass.cpp -o findMVT.so")
     grbName: str = "GRB080319B"
     csvFilePath: str = f"data/processed/{grbName}LC.csv"
     analysis = analyseGRB(grbName, csvFilePath)
-    fig, ax = plt.subplots()
-    ax.scatter(
-        analysis.deltaT,
-        analysis.VTSet,
-        color='blue')
-    ax.set_ylabel('VT')
-    ax.set_yscale('log')
-    ax.set_xscale('log')
-    ax.set_xlabel('$\\Delta t$')
-    plt.show()
+    plotVTvsDeltaT()

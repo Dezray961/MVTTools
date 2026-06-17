@@ -10,6 +10,17 @@ from contextlib import chdir
 import time
 
 
+# time decorator
+def timeit(func):
+    def wrapper(*args, **kwargs):
+        start_time = time.time()
+        result = func(*args, **kwargs)
+        end_time = time.time()
+        print(f"{func.__name__} took {end_time - start_time} seconds to execute.")
+        return result
+    return wrapper
+
+
 # class to hand data to the C++ code and get the results back
 class analyseGRB(GRBData):
     # constructor for the MVTAnalysis class
@@ -25,16 +36,7 @@ class analyseGRB(GRBData):
         time: np.ndarray = np.ascontiguousarray(self.data['time'].to_numpy(), dtype=np.float64)
         rateErr: np.ndarray = np.ascontiguousarray(self.data['error'].to_numpy(), dtype=np.float64)
         # run the C++ code to get the results back
-        self.analysis = self.lib.allocateMVTAnalysis(
-            rate.ctypes.data_as(ctypes.POINTER(ctypes.c_double)),
-            time.ctypes.data_as(ctypes.POINTER(ctypes.c_double)),
-            rateErr.ctypes.data_as(ctypes.POINTER(ctypes.c_double)),
-            self.lengthOfData
-            )
-        self.VTSet: np.ndarray = self.getVTSetAsArray()
-        self.kSet: np.ndarray = self.getKSetAsArray()
-        self.deltaT: np.ndarray = self.getDeltaTAsArray()
-        self.deltaTError: np.ndarray = self.getDeltaTErrorAsArray()
+        self.runAnalysis()
 
 
     # method to hand the data to the C++ code and get the results back
@@ -62,6 +64,23 @@ class analyseGRB(GRBData):
         self.lib.getDeltaTArray.restype = ctypes.POINTER(ctypes.c_double)
         self.lib.getDeltaTErrorArray.argtypes = [ctypes.c_void_p]
         self.lib.getDeltaTErrorArray.restype = ctypes.POINTER(ctypes.c_double)
+
+
+    # method to run the C++ code to get the results back
+    @timeit
+    def runAnalysis(
+            self
+            ) -> None:
+        self.analysis = self.lib.allocateMVTAnalysis(
+            self.data['rate'].to_numpy().ctypes.data_as(ctypes.POINTER(ctypes.c_double)),
+            self.data['time'].to_numpy().ctypes.data_as(ctypes.POINTER(ctypes.c_double)),
+            self.data['error'].to_numpy().ctypes.data_as(ctypes.POINTER(ctypes.c_double)),
+            self.lengthOfData
+            )
+        self.VTSet: np.ndarray = self.getVTSetAsArray()
+        self.kSet: np.ndarray = self.getKSetAsArray()
+        self.deltaT: np.ndarray = self.getDeltaTAsArray()
+        self.deltaTError: np.ndarray = self.getDeltaTErrorAsArray()
 
 
     # method to conbert the VT set to an array of doubles

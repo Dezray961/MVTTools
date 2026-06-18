@@ -25,6 +25,7 @@ class GRBData:
         self.correctTime()
         self.timeInBin()
         self.logRate()
+        self.logRateError()
 
     # method to read in a CSV file and store the data
     def csvToDataFrame(
@@ -78,6 +79,16 @@ class GRBData:
         rate: np.ndarray = self.data['rate'].to_numpy()
         logRate: np.ndarray = np.log(np.abs(rate))
         self.data['logRate'] = logRate
+    
+
+    # method find the uncertainty in the log of the rate
+    def logRateError(
+            self
+            ) -> None:
+        rate: np.ndarray = self.data['rate'].to_numpy()
+        error: np.ndarray = self.data['error'].to_numpy()
+        logRateError: np.ndarray = error / rate
+        self.data['logRateError'] = np.abs(logRateError)
 
 
 if __name__ == "__main__":

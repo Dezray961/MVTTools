@@ -74,7 +74,7 @@ class analyseGRB(GRBData):
         self.analysis = self.lib.allocateMVTAnalysis(
             self.data['logRate'].to_numpy().ctypes.data_as(ctypes.POINTER(ctypes.c_double)),
             self.data['time'].to_numpy().ctypes.data_as(ctypes.POINTER(ctypes.c_double)),
-            self.data['logRateError'].to_numpy().ctypes.data_as(ctypes.POINTER(ctypes.c_double)),
+            self.data['logRateErrorSquared'].to_numpy().ctypes.data_as(ctypes.POINTER(ctypes.c_double)),
             self.lengthOfData,
             ctypes.c_bool(evenKSet)
             )

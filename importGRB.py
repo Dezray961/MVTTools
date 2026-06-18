@@ -88,7 +88,7 @@ class GRBData:
         rate: np.ndarray = self.data['rate'].to_numpy()
         error: np.ndarray = self.data['error'].to_numpy()
         logRateError: np.ndarray = error / rate
-        self.data['logRateError'] = np.abs(logRateError) ** 2
+        self.data['logRateErrorSquared'] = np.abs(logRateError) ** 2
 
 
 if __name__ == "__main__":

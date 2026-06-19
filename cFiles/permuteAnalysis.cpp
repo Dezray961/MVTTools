@@ -3,7 +3,7 @@
 #include <math.h>
 #include <numeric>
 #include <algorithm>
-#include "MVTClass.hpp"
+#include "HaarCoefficient.hpp"
 
 /// public member functions
 /// constructor
@@ -32,8 +32,8 @@ PermuteAnalysis::PermuteAnalysis
     {
         findKSet();
     }
-    findDeltaTSet();
     this->kSetSize = kSet.size();
+    getTimeInBins();
 }
 
 
@@ -87,56 +87,51 @@ void PermuteAnalysis::generateUniformKSet
 };
 
 
-void PermuteAnalysis::findDeltaTSet()
+void PermuteAnalysis::getTimeInBins()
 {
-    // itterate through the k set and calculate Δt for each k
-    for (int k : kSet)
+    for (int i = 0; i < lengthOfData - 1; i++)
     {
-        std::vector<double> differenceList; // list to store the differences between time values
-        // calculate the differences between time values for the given k
-        for (int i = k; i < lengthOfData; i++)
-        {
-            double difference = time[i] - time[i - k];
-            differenceList.push_back(difference);
-        }
-        // calculate the mean of the differences
-        double meanDeltaT = std::reduce(differenceList.begin(), differenceList.end(), 0.0) / (lengthOfData - k);
-        this->deltaT.push_back(meanDeltaT);
-        // calculate the standard deviation of the differences
-        // create a new vector to store the differences between each difference and the mean
-        std::vector<double> deltaTDifferenceList(differenceList.size());
-        std::transform // applies a function to each element in the input range and stores the result in the output range
-        (
-            differenceList.begin(), // input range
-            differenceList.end(), // input range
-            deltaTDifferenceList.begin(), // output range
-            [meanDeltaT](double difference) { return difference - meanDeltaT; } // lambda function
-        );
-        // calculate the sum of the squared differences
-        double sumOfSquaredDifferences = std::inner_product(
-            deltaTDifferenceList.begin(),
-            deltaTDifferenceList.end(),
-            deltaTDifferenceList.begin(),
-            0.0
-        );
-        // calculate the standard deviation
-        double standardDeviation = sqrt(sumOfSquaredDifferences / deltaTDifferenceList.size());
-        // store the standard deviation in the deltaTError vector
-        this->deltaTError.push_back(standardDeviation);
+        timeInBins.push_back(time[i] - time[i + 1]);
     }
-};
+}
 
 
-std::vector<double> PermuteAnalysis::generatePermutation
+
+std::vector<std::vector<double>> PermuteAnalysis::shiftData
 (
     int index
 )
 {
+    std::vector<double> permutedRate;
+    std::vector<double> permutedSigma;
+    for (int i = 0; i < lengthOfData; i++)
+    {
+        int permutedIndex = (i + index) % lengthOfData;
+        permutedRate.push_back(rate[permutedIndex]);
+        permutedSigma.push_back(rateErr[permutedIndex]);
+    }
+    return {permutedRate, permutedSigma};
+}
 
+
+std::vector<double> PermuteAnalysis::analysePermutation
+(
+    int index
+)
+{
+    /// generate a permutation of the dataset based on the given index
+    std::vector<std::vector<double>> permutedData = shiftData(index);
+    /// run the MVTAnalysis on the permuted dataset
+    HaarCoefficient haarCoefficient(permutedData[0], time, permutedData[1], timeInBins, lengthOfData, kSet, kMax);
+    return haarCoefficient.results;
 }
 
 
 std::vector<std::vector<double>> PermuteAnalysis::runMVTAnalysisOnPermutations()
 {
-
+    for (int shiftIndex = 0; shiftIndex < lengthOfData; shiftIndex++)
+    {
+        std::vector<double> permutationResults = analysePermutation(shiftIndex);
+        
+    }
 }

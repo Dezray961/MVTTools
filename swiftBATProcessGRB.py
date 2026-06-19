@@ -128,7 +128,7 @@ def processSwiftBATData(
         mergedData: pd.DataFrame = pd.concat([burstData1, burstData2], axis=1)
 
         # filter the data to only include rows where the count rate is greater than the standard deviation of the pre-burst count rate
-        filteredData: pd.DataFrame = mergedData.where(mergedData['rate'].astype(float) > preBurstStdDev).dropna()
+        filteredData: pd.DataFrame = mergedData.where(mergedData['rate'].astype(float) > 0 * preBurstStdDev).dropna()
         filteredData.to_csv(csvFilePath, index=False)
 
 

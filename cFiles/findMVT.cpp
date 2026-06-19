@@ -3,44 +3,64 @@ g++ -fPIC -shared -std=c++17 -fopenmp findMVT.cpp MVTClass.hpp MVTClass.cpp -o f
 */
 
 
-# include "MVTClass.hpp"
+# include "permuteAnalysis.hpp"
 
 // function to allocate memory for the MVTAnalysis class
 extern "C" {
-    MVTAnalysis* allocateMVTAnalysis(
+    PermuteAnalysis* allocatePermuteAnalysis(
         double *rate,
         double *time,
         double *rateErr,
         int lenghtOfData,
-        bool generateEvenKSetFlag
+        int numberOfTimeBins
     )
     {
-        return new MVTAnalysis(rate, time, rateErr, lenghtOfData, generateEvenKSetFlag);
+        return new PermuteAnalysis(rate, time, rateErr, lenghtOfData, numberOfTimeBins);
     }
 
-    double* getVTSetArray(MVTAnalysis* analysis)
+    void runPermuteAnalysis(PermuteAnalysis* analysis)
     {
-        return analysis->VTSetArray;
+        analysis->runAnalysis();
     }
 
-    int getVTSetSize(MVTAnalysis* analysis)
+    int getPermutationsCompleted(PermuteAnalysis* analysis)
     {
-        return analysis->kSetSize;
+        return analysis->getPermutationsCompleted();
     }
 
-    int* getKSetArray(MVTAnalysis* analysis)
+    int getTotalPermutations(PermuteAnalysis* analysis)
     {
-        return analysis->kSet.data();
+        return analysis->getTotalPermutations();
     }
 
-    double* getDeltaTArray(MVTAnalysis* analysis)
+    int isAnalysisComplete(PermuteAnalysis* analysis)
     {
-        return analysis->deltaT.data();
+        return analysis->isAnalysisComplete() ? 1 : 0;
     }
 
-    double* getDeltaTErrorArray(MVTAnalysis* analysis)
+    void freePermuteAnalysis(PermuteAnalysis* analysis)
     {
-        return analysis->deltaTError.data();
+        delete analysis;
+    }
+
+    double* getLogBinEdges(PermuteAnalysis* analysis)
+    {
+        return analysis->logBinEdges.data();
+    }
+
+    double* getLogBinCenters(PermuteAnalysis* analysis)
+    {
+        return analysis->logBinCenters.data();
+    }
+
+    double* getPowerSetAverages(PermuteAnalysis* analysis, int index)
+    {
+        return &analysis->powerSetAverages[index];
+    }
+
+    double* getPowerSetStdDevs(PermuteAnalysis* analysis, int index)
+    {
+        return &analysis->powerSetStdDevs[index];
     }
 }
 

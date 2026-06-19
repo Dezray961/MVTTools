@@ -7,7 +7,13 @@ import pandas as pd
 import ctypes
 import os
 from contextlib import chdir
+from threading import Thread
 import time
+
+try:
+    from tqdm import tqdm
+except ImportError:
+    tqdm = None
 
 
 # time decorator
@@ -24,17 +30,20 @@ def timeit(func):
 # class to hand data to the C++ code and get the results back
 class analyseGRB(GRBData):
     # constructor for the MVTAnalysis class
-    def __init__(self,
-                 name: str,
-                 CSVfilePath: str,
-                 evenKSet: bool = False
-                 ) -> None:
+    def __init__(
+            self,
+            name: str,
+            CSVfilePath: str,
+            numberOfTimeBins: int = 64
+            ) -> None:
         super().__init__(name, CSVfilePath)
         self.lengthOfData: int = len(self.data)
+        self.numberOfTimeBins: int = numberOfTimeBins
         # create a pointer to the MVTAnalysis class
         self.cWrapper()
         # run the C++ code to get the results back
-        self.runAnalysis(evenKSet)
+        self.runAnalysis()
+        self.getTimeBinUncertainty()
 
 
     # method to hand the data to the C++ code and get the results back
@@ -45,91 +54,131 @@ class analyseGRB(GRBData):
         self.libPath: str = os.path.join(os.path.dirname(__file__), "cFiles", "findMVT.so")
         self.lib: ctypes.CDLL = ctypes.CDLL(self.libPath)
         # declare the argument and return types for the C++ function
-        self.lib.allocateMVTAnalysis.argtypes = [
+        self.lib.allocatePermuteAnalysis.argtypes = [
             ctypes.POINTER(ctypes.c_double),
             ctypes.POINTER(ctypes.c_double),
             ctypes.POINTER(ctypes.c_double),
             ctypes.c_int,
-            ctypes.c_bool
+            ctypes.c_int
         ]
-        self.lib.allocateMVTAnalysis.restype = ctypes.c_void_p
-        self.lib.getVTSetArray.argtypes = [ctypes.c_void_p]
-        self.lib.getVTSetArray.restype = ctypes.POINTER(ctypes.c_double)
-        self.lib.getVTSetSize.argtypes = [ctypes.c_void_p]
-        self.lib.getVTSetSize.restype = ctypes.c_int
-        self.lib.getKSetArray.argtypes = [ctypes.c_void_p]
-        self.lib.getKSetArray.restype = ctypes.POINTER(ctypes.c_int)
-        self.lib.getDeltaTArray.argtypes = [ctypes.c_void_p]
-        self.lib.getDeltaTArray.restype = ctypes.POINTER(ctypes.c_double)
-        self.lib.getDeltaTErrorArray.argtypes = [ctypes.c_void_p]
-        self.lib.getDeltaTErrorArray.restype = ctypes.POINTER(ctypes.c_double)
+        self.lib.allocatePermuteAnalysis.restype = ctypes.c_void_p
+        self.lib.getLogBinEdges.argtypes = [ctypes.c_void_p]
+        self.lib.getLogBinEdges.restype = ctypes.POINTER(ctypes.c_double)
+        self.lib.getLogBinCenters.argtypes = [ctypes.c_void_p]
+        self.lib.getLogBinCenters.restype = ctypes.POINTER(ctypes.c_double)
+        self.lib.getPowerSetAverages.argtypes = [ctypes.c_void_p, ctypes.c_int]
+        self.lib.getPowerSetAverages.restype = ctypes.POINTER(ctypes.c_double)
+        self.lib.getPowerSetStdDevs.argtypes = [ctypes.c_void_p, ctypes.c_int]
+        self.lib.getPowerSetStdDevs.restype = ctypes.POINTER(ctypes.c_double)
+        self.lib.runPermuteAnalysis.argtypes = [ctypes.c_void_p]
+        self.lib.runPermuteAnalysis.restype = None
+        self.lib.getPermutationsCompleted.argtypes = [ctypes.c_void_p]
+        self.lib.getPermutationsCompleted.restype = ctypes.c_int
+        self.lib.getTotalPermutations.argtypes = [ctypes.c_void_p]
+        self.lib.getTotalPermutations.restype = ctypes.c_int
+        self.lib.isAnalysisComplete.argtypes = [ctypes.c_void_p]
+        self.lib.isAnalysisComplete.restype = ctypes.c_int
+        self.lib.freePermuteAnalysis.argtypes = [ctypes.c_void_p]
+        self.lib.freePermuteAnalysis.restype = None
 
 
     # method to run the C++ code to get the results back
     @timeit
     def runAnalysis(
-            self,
-            evenKSet: bool
+            self
             ) -> None:
-        self.analysis = self.lib.allocateMVTAnalysis(
+        self.analysis = self.lib.allocatePermuteAnalysis(
             self.data['logRate'].to_numpy().ctypes.data_as(ctypes.POINTER(ctypes.c_double)),
             self.data['time'].to_numpy().ctypes.data_as(ctypes.POINTER(ctypes.c_double)),
             self.data['logRateErrorSquared'].to_numpy().ctypes.data_as(ctypes.POINTER(ctypes.c_double)),
             self.lengthOfData,
-            ctypes.c_bool(evenKSet)
+            ctypes.c_int(self.numberOfTimeBins)
             )
-        self.VTSet: np.ndarray = self.getVTSetAsArray()
-        self.kSet: np.ndarray = self.getKSetAsArray()
-        self.deltaT: np.ndarray = self.getDeltaTAsArray()
-        self.deltaTError: np.ndarray = self.getDeltaTErrorAsArray()
+
+        worker = Thread(target=self.lib.runPermuteAnalysis, args=(self.analysis,))
+        worker.start()
+
+        totalPermutations = self.lib.getTotalPermutations(self.analysis)
+        lastCompleted = 0
+        progressBar = tqdm(total=totalPermutations, desc='Permutations', unit='perm') if tqdm is not None else None
+
+        while worker.is_alive():
+            completed = self.lib.getPermutationsCompleted(self.analysis)
+            if completed > lastCompleted:
+                if progressBar is not None:
+                    progressBar.update(completed - lastCompleted)
+                lastCompleted = completed
+            time.sleep(0.05)
+
+        worker.join()
+
+        completed = self.lib.getPermutationsCompleted(self.analysis)
+        if completed > lastCompleted and progressBar is not None:
+            progressBar.update(completed - lastCompleted)
+
+        if progressBar is not None:
+            progressBar.close()
+
+        self.logBinEdges: np.ndarray = self.getLogBinEdgesAsArray()
+        self.logBinCentres: np.ndarray = self.getLogBinCentres()
+        self.powerSetAverages: np.ndarray = self.getPowerSetAverages()
+        self.powerSetStdDevs: np.ndarray = self.getPowerSetStdDevs()
 
 
-    # method to conbert the VT set to an array of doubles
-    def getVTSetAsArray(
+    # method to conbert the log bin edges set to an array of doubles
+    def getLogBinEdgesAsArray(
             self
             ) -> np.ndarray:
-        vtSetArrayPtr = self.lib.getVTSetArray(self.analysis)
-        vtSetSize = self.lib.getVTSetSize(self.analysis)
-        VTSetArray: np.ndarray = np.ctypeslib.as_array(
-            vtSetArrayPtr,
-            shape=(vtSetSize,))
-        return VTSetArray
+        logBinEdgesArrayPtr = self.lib.getLogBinEdges(self.analysis)
+        logBinEdgesSize = self.numberOfTimeBins + 1
+        LogBinEdgesArray: np.ndarray = np.ctypeslib.as_array(
+            logBinEdgesArrayPtr,
+            shape=(logBinEdgesSize,))
+        return LogBinEdgesArray
 
 
-    # method to convert the k set to an array of integers
-    def getKSetAsArray(
+    # method to convert the log bin centres set to an array of doubles
+    def getLogBinCentres(
             self
             ) -> np.ndarray:
-        kSetArrayPtr = self.lib.getKSetArray(self.analysis)
-        kSetSize = self.lib.getVTSetSize(self.analysis)
-        KSetArray: np.ndarray = np.ctypeslib.as_array(
-            kSetArrayPtr,
-            shape=(kSetSize,))
-        return KSetArray
+        logBinCentresArrayPtr = self.lib.getLogBinCenters(self.analysis)
+        logBinCentresSize = self.numberOfTimeBins
+        LogBinCentresArray: np.ndarray = np.ctypeslib.as_array(
+            logBinCentresArrayPtr,
+            shape=(logBinCentresSize,))
+        return LogBinCentresArray
     
 
-    # method to convert the deltaT set to an array of doubles
-    def getDeltaTAsArray(
+    # method to convert the power set averages to an array of doubles
+    def getPowerSetAverages(
             self
             ) -> np.ndarray:
-        deltaTArrayPtr = self.lib.getDeltaTArray(self.analysis)
-        deltaTSize = self.lib.getVTSetSize(self.analysis)
-        DeltaTArray: np.ndarray = np.ctypeslib.as_array(
-            deltaTArrayPtr,
-            shape=(deltaTSize,))
-        return DeltaTArray
+        PowerSetAveragesArray: np.ndarray = np.array(
+            [self.lib.getPowerSetAverages(self.analysis, index)[0] for index in range(self.numberOfTimeBins)]
+        )
+        return PowerSetAveragesArray
+    
 
-
-    # method to convert the deltaTError set to an array of doubles
-    def getDeltaTErrorAsArray(
+    # method to convert the power set standard deviations to an array of doubles
+    def getPowerSetStdDevs(
             self
             ) -> np.ndarray:
-        deltaTErrorArrayPtr = self.lib.getDeltaTErrorArray(self.analysis)
-        deltaTErrorSize = self.lib.getVTSetSize(self.analysis)
-        DeltaTErrorArray: np.ndarray = np.ctypeslib.as_array(
-            deltaTErrorArrayPtr,
-            shape=(deltaTErrorSize,))
-        return DeltaTErrorArray
+        PowerSetStdDevsArray: np.ndarray = np.array(
+            [self.lib.getPowerSetStdDevs(self.analysis, index)[0] for index in range(self.numberOfTimeBins)]
+        )
+        return PowerSetStdDevsArray
+    
+
+    # method to find the uncertainty in the time bins
+    def getTimeBinUncertainty(
+            self
+            ) -> np.ndarray:
+        self.timeBinUncertaintyArray: list = []
+        for i, edge in enumerate(self.logBinEdges):
+            if i == 0:
+                continue
+            self.timeBinUncertaintyArray.append((edge - self.logBinEdges[i-1]) / 2)
+        self.timeBinUncertaintyArray = np.array(self.timeBinUncertaintyArray)
 
 
 if __name__ == "__main__":
@@ -147,9 +196,8 @@ if __name__ == "__main__":
     def plotVTvsDeltaT()-> None:
         fig, ax = plt.subplots()
         ax.errorbar(
-            analysis.deltaT,
-            analysis.VTSet,
-            xerr=analysis.deltaTError,
+            10**analysis.logBinCentres,
+            analysis.powerSetAverages,
             ls='none',
             marker='x',
             color='blue')
@@ -162,8 +210,12 @@ if __name__ == "__main__":
 
     # compile the C++ code to a shared library
     with chdir(os.path.join(os.path.dirname(__file__), "cFiles")):
-        os.system("g++ -O3 -fPIC -shared -std=c++17 -fopenmp findMVT.cpp MVTClass.hpp MVTClass.cpp -o findMVT.so")
+        os.system("g++ -O3 -fPIC -shared -std=c++17 -fopenmp findMVT.cpp HaarCoefficient.hpp HaarCoefficient.cpp permuteAnalysis.cpp permuteAnalysis.hpp -o findMVT.so")
+    
+    # run the analysis on a specific GRB
     grbName: str = "GRB080319B"
     csvFilePath: str = f"data/processed/{grbName}LC.csv"
     analysis = analyseGRB(grbName, csvFilePath)
+
+    #plot the results
     plotVTvsDeltaT()

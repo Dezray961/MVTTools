@@ -12,13 +12,11 @@ class HaarCoefficient
         std::vector<double> rateErr;
         std::vector<double> timeInBins;
         int lengthOfData;
-        int kMax;
         std::vector<int> scaleSet;
         double deltaT;
         double coefficientValue;
         double coefficientVariance;
-        int HaarLevel;
-        std::vector<double> results;
+        std::vector<std::vector<double>> results;
 
 
         /**
@@ -29,7 +27,6 @@ class HaarCoefficient
          * @param timeInBins A vector of time values in bins.
          * @param lengthOfData The length of the data vectors.
          * @param scaleSet A vector of scale values to use for the Haar coefficient calculation.
-         * @param kMax The maximum value of k to use for the Haar coefficient calculation.
          * @return A vector containing the results of the Haar coefficient calculation.
          */
         HaarCoefficient
@@ -39,8 +36,7 @@ class HaarCoefficient
             std::vector<double> rateErr,
             std::vector<double> timeInBins,
             int lengthOfData,
-            std::vector<int> kSet,
-            int kMax
+            std::vector<int> scaleSet
         );
 
 
@@ -52,7 +48,7 @@ class HaarCoefficient
          */
         double sliceMean
         (
-            std::vector<double> slice,
+            const std::vector<double>& slice,
             int sliceSize
         );
 
@@ -62,9 +58,9 @@ class HaarCoefficient
          * @param block A vector of data values to calculate the Haar coefficient for.
          * @return The Haar coefficient for the given block of data.
          */
-        double coefficient
+        double findCoefficient
         (
-            std::vector<double> block,
+            int startIndex,
             int halfBlockSize
         );
 
@@ -74,9 +70,9 @@ class HaarCoefficient
          * @param block A vector of data values to calculate the Haar coefficient variance for. This must be the squared propagated error of the log of the count rate values.
          * @return The variance of the Haar coefficient for the given block of data.
          */
-        double coefficientVariance
+        double findCoefficientVariance
         (
-            std::vector<double> block,
+            int startIndex,
             int halfBlockSize
         );
 
@@ -104,6 +100,13 @@ class HaarCoefficient
             double coefficientValue,
             double coefficientVariance
         );
+
+
+        /**
+         * Calculates the Haar coefficients for the given data and parameters.
+         * @return A vector containing the results of the Haar coefficient calculation.
+         */
+        void findHaarCoefficients();
 };
 
 #endif // HARRCOEFFICIENT_HPP

@@ -93,7 +93,6 @@ def processSwiftBATData(
             return pd.DataFrame(data[1:], columns=data[0], index=indexList)
 
 
-
         # split the filename to get the directory
         directory: str = filename.rsplit("/", 1)[0]
         # open a shell
@@ -116,20 +115,34 @@ def processSwiftBATData(
         Path('data/processed').mkdir(parents=True, exist_ok=True)
         csvFilePath: str = f"data/processed/{GRBName}LC.csv"
 
-        # read the pre-burst output.txt file and calculate the standard deviation of the count rate
-        preBurstData, _ = linesToDataFrames(directory, "outputPB")
-        preBurstStdDev: float = preBurstData['rate'].astype(float).std()
-        print(f"Standard deviation of the pre-burst count rate: {preBurstStdDev}")
 
+        #############################################################################
+        # change this to save the pre-burst data to CSV as well. It no lnoger       #
+        # needs to calculate the standard deviation of the pre-burst count rate,    #
+        #############################################################################
+
+        # burst
         # read the output.txt file and write the data to the new CSV file
         burstData1, burstData2 = linesToDataFrames(directory, "output")
 
         # combine the two blocks of data side by side, using the index to align the rows
         mergedData: pd.DataFrame = pd.concat([burstData1, burstData2], axis=1)
 
-        # filter the data to only include rows where the count rate is greater than the standard deviation of the pre-burst count rate
-        filteredData: pd.DataFrame = mergedData.where(mergedData['rate'].astype(float) > 0 * preBurstStdDev).dropna()
-        filteredData.to_csv(csvFilePath, index=False)
+        # write the merged data to a CSV file
+        mergedData.to_csv(csvFilePath, index=False)
+
+        # pre-burst
+        # read the pre-burst output.txt file and calculate the standard deviation of the count rate
+        preBurstData1, preBurstData2 = linesToDataFrames(directory, "outputPB")
+
+        # combine the two blocks of pre-burst data side by side, using the index to align the rows
+        preBurstMergedData: pd.DataFrame = pd.concat([preBurstData1, preBurstData2], axis=1)
+
+        # truncate the pre-burst data to the same length as the burst data
+        preBurstMergedData = preBurstMergedData.iloc[:len(mergedData)]
+
+        # write the merged pre-burst data to a CSV file
+        preBurstMergedData.to_csv(f"data/processed/{GRBName}PB.csv", index=False)
 
 
     # generate the wget statement to download the data for the given GRB name
@@ -161,6 +174,8 @@ def processSwiftBATData(
     # convert the processed data into a CSV file for analysis
     print(f"Converting processed data for {GRBName} into CSV format...")
     convertLightCurveToCSV(dataFilePath, GRBName)
+
+
     print("Conversion complete.")
 
     # delete the original data file if specified

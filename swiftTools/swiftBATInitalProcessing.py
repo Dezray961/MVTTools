@@ -4,7 +4,7 @@ likely only to work on linux?
 """
 
 import pexpect
-from swiftBATCatalogueGRB import importData, getCoordinates, getStartStopTime
+from swiftTools.swiftBATCatalogueGRB import importData, getCoordinates, getStartStopTime
 
 
 # function to open an shell terminal and process the data using the HEASoft tools

@@ -1,4 +1,4 @@
-import swiftBATCatalogueGRB
+from swiftTools import swiftBATCatalogueGRB
 from pathlib import Path
 
 

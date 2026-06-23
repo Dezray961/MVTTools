@@ -16,7 +16,7 @@ Only the initial 000 file has the event data
 
 """
 import pexpect
-from swiftBATCatalogueGRB import importData, getObservationID
+from swiftTools.swiftBATCatalogueGRB import importData, getObservationID
 from contextlib import chdir
 
 

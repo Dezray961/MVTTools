@@ -5,9 +5,9 @@ os as it will automatically change back to the original working directory when t
 Further, the SwiftBAT tools should be in their own directory.
 """
 
-import swiftBATCatalogueGRB as catalogue
-import swiftBATDataFetcher as fetcher
-import swiftBATInitalProcessing as processing
+import swiftDataTools.swiftBATCatalogueGRB as catalogue
+import swiftDataTools.swiftBATDataFetcher as fetcher
+import swiftDataTools.swiftBATInitalProcessing as processing
 import pexpect
 from contextlib import chdir
 from pathlib import Path

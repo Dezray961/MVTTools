@@ -1,7 +1,7 @@
 #### I am also not sure how the paper has so many data points for the VT vs k plot.
 
 
-from importGRB import GRBData
+from importLightCurve import lightCurveData
 import numpy as np
 import pandas as pd
 import ctypes
@@ -28,7 +28,7 @@ def timeit(func):
 
 
 # class to hand data to the C++ code and get the results back
-class analyseGRB(GRBData):
+class analyseLightCurve(lightCurveData):
     # constructor for the MVTAnalysis class
     def __init__(
             self,
@@ -181,6 +181,12 @@ class analyseGRB(GRBData):
         self.timeBinUncertaintyArray = np.array(self.timeBinUncertaintyArray)
 
 
+
+
+
+
+
+
 if __name__ == "__main__":
     """
     this script won't generate the  plot if it is run in a terminal. In the interactive 
@@ -215,7 +221,7 @@ if __name__ == "__main__":
     # run the analysis on a specific GRB
     grbName: str = "GRB080319B"
     csvFilePath: str = f"data/processed/{grbName}LC.csv"
-    analysis = analyseGRB(grbName, csvFilePath)
+    analysis = analyseLightCurve(grbName, csvFilePath)
 
     #plot the results
     plotVTvsDeltaT()

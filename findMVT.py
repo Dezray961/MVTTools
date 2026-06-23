@@ -9,6 +9,7 @@ import os
 from contextlib import chdir
 from threading import Thread
 import time
+import matplotlib.pyplot as plt
 
 try:
     from tqdm import tqdm
@@ -34,11 +35,15 @@ class analyseLightCurve(lightCurveData):
             self,
             name: str,
             CSVfilePath: str,
-            numberOfTimeBins: int = 64
+            numberOfTimeBins: int = 64,
+            burst: bool = True,
+            preBurstPowerSetStdDevs: np.ndarray | None = None
             ) -> None:
         super().__init__(name, CSVfilePath)
         self.lengthOfData: int = len(self.data)
         self.numberOfTimeBins: int = numberOfTimeBins
+        self.burst: bool = burst
+        self.preBurstPowerSetStdDevs: np.ndarray | None = preBurstPowerSetStdDevs
         # create a pointer to the MVTAnalysis class
         self.cWrapper()
         # run the C++ code to get the results back
@@ -59,7 +64,9 @@ class analyseLightCurve(lightCurveData):
             ctypes.POINTER(ctypes.c_double),
             ctypes.POINTER(ctypes.c_double),
             ctypes.c_int,
-            ctypes.c_int
+            ctypes.c_int,
+            ctypes.c_bool,
+            ctypes.POINTER(ctypes.c_double)
         ]
         self.lib.allocatePermuteAnalysis.restype = ctypes.c_void_p
         self.lib.getLogBinEdges.argtypes = [ctypes.c_void_p]
@@ -87,13 +94,20 @@ class analyseLightCurve(lightCurveData):
     def runAnalysis(
             self
             ) -> None:
+        if self.preBurstPowerSetStdDevs is None:
+            preBurstPowerSetStdDevs = np.zeros(self.numberOfTimeBins, dtype=np.double)
+        else:
+            preBurstPowerSetStdDevs = np.asarray(self.preBurstPowerSetStdDevs, dtype=np.double)
+
         self.analysis = self.lib.allocatePermuteAnalysis(
             self.data['logRate'].to_numpy().ctypes.data_as(ctypes.POINTER(ctypes.c_double)),
             self.data['time'].to_numpy().ctypes.data_as(ctypes.POINTER(ctypes.c_double)),
             self.data['logRateErrorSquared'].to_numpy().ctypes.data_as(ctypes.POINTER(ctypes.c_double)),
             self.lengthOfData,
-            ctypes.c_int(self.numberOfTimeBins)
-            )
+            ctypes.c_int(self.numberOfTimeBins),
+            ctypes.c_bool(self.burst),
+            preBurstPowerSetStdDevs.ctypes.data_as(ctypes.POINTER(ctypes.c_double))
+        )
 
         worker = Thread(target=self.lib.runPermuteAnalysis, args=(self.analysis,))
         worker.start()
@@ -181,7 +195,57 @@ class analyseLightCurve(lightCurveData):
         self.timeBinUncertaintyArray = np.array(self.timeBinUncertaintyArray)
 
 
+# class to analyse the light curves for pre-burst and burst data for a given GRB.
+class analyseGRB:
+    def __init__(
+            self,
+            GRBName: str,
+            numberOfTimeBins: int = 64
+            ) -> None:
+        self.GRBName: str = GRBName
+        self.numberOfTimeBins: int = numberOfTimeBins
+        self.burstCSVFilePath: str = f"data/processed/{self.GRBName}LC.csv"
+        self.preBurstCSVFilePath: str = f"data/processed/{self.GRBName}PB.csv"
+        self.preBurstAnalysis: analyseLightCurve = analyseLightCurve(
+            self.GRBName,
+            self.preBurstCSVFilePath,
+            self.numberOfTimeBins,
+            burst=False
+            )
+        self.burstAnalysis: analyseLightCurve = analyseLightCurve(
+            self.GRBName,
+            self.burstCSVFilePath,
+            self.numberOfTimeBins,
+            burst=True,
+            preBurstPowerSetStdDevs=self.preBurstAnalysis.powerSetStdDevs
+            )
+        self.logBinEdges: np.ndarray = self.burstAnalysis.logBinEdges
+        self.logBinCentres: np.ndarray = self.burstAnalysis.logBinCentres
+        self.powerSetAverages: np.ndarray = self.burstAnalysis.powerSetAverages - self.preBurstAnalysis.powerSetAverages
 
+    # method to filter the values that are less than 3σ from the background
+    def filterValues(
+            self
+            ) -> None:
+        pass
+
+    def plotVTvsDeltaT(
+            self
+            ) -> None:
+        fig, ax = plt.subplots()
+        ax.errorbar(
+            10**self.logBinCentres,
+            self.powerSetAverages,
+#            xerr=self.burstAnalysis.timeBinUncertaintyArray,
+            ls='none',
+            marker='x',
+            color='blue')
+        ax.set_ylabel('VT')
+        ax.set_yscale('log')
+        ax.set_xscale('log')
+        ax.set_xlabel('$\\Delta t$')
+        plt.savefig(f"data/processed/{self.GRBName}VTvsDeltaT.png", dpi=300)
+        plt.show()
 
 
 
@@ -194,24 +258,6 @@ if __name__ == "__main__":
     window needs to be restarted after each run of the script. Otherwise, it will throw an
     error allocateMVTAnalysis() is an undefined symbol. I don't know why this happens. 
     """
-    import matplotlib.pyplot as plt
-    import sys
-
-
-    # plotting function
-    def plotVTvsDeltaT()-> None:
-        fig, ax = plt.subplots()
-        ax.errorbar(
-            10**analysis.logBinCentres,
-            analysis.powerSetAverages,
-            ls='none',
-            marker='x',
-            color='blue')
-        ax.set_ylabel('VT')
-        ax.set_yscale('log')
-        ax.set_xscale('log')
-        ax.set_xlabel('$\\Delta t$')
-        plt.show()
 
 
     # compile the C++ code to a shared library
@@ -221,7 +267,7 @@ if __name__ == "__main__":
     # run the analysis on a specific GRB
     grbName: str = "GRB080319B"
     csvFilePath: str = f"data/processed/{grbName}LC.csv"
-    analysis = analyseLightCurve(grbName, csvFilePath)
+    analysis = analyseGRB(grbName, numberOfTimeBins=64)
 
     #plot the results
-    plotVTvsDeltaT()
+    analysis.plotVTvsDeltaT()

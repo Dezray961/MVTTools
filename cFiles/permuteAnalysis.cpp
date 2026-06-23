@@ -14,7 +14,10 @@ PermuteAnalysis::PermuteAnalysis
     double *timeArray,
     double *rateErrArray,
     int lenghtOfData,
-    int numberOfTimeBins
+    int numberOfTimeBins,
+    bool burst,
+    double *preBurstPowerSetStds
+
 )
 {
     this->lengthOfData = lenghtOfData;
@@ -22,11 +25,17 @@ PermuteAnalysis::PermuteAnalysis
     this->rate.reserve(lenghtOfData);
     this->time.reserve(lenghtOfData);
     this->rateErr.reserve(lenghtOfData);
+    this->preBurstPowerSetStdDev.reserve(numberOfTimeBins);
+    this->burst = burst;
     for (int i = 0; i < lenghtOfData; i++)
     {
         this->rate.push_back(rateArray[i]);
         this->time.push_back(timeArray[i]);
         this->rateErr.push_back(rateErrArray[i]);
+    }
+    for (int i = 0; i < numberOfTimeBins; i++)
+    {
+        this->preBurstPowerSetStdDev.push_back(preBurstPowerSetStds[i]);
     }
     findKMax();
     findKSet();
@@ -188,9 +197,23 @@ void PermuteAnalysis::binResults
         {
             if (logTauIJ >= logBinEdges[j] && logTauIJ < logBinEdges[j + 1])
             {
-                powerSums[j] += power;
-                powerSumSquares[j] += power * power;
-                powerCounts[j] += 1;
+                /// check if this is a burst or pre-burst analysis
+                if (!burst)
+                {
+                    powerSums[j] += power;
+                    powerSumSquares[j] += power * power;
+                    powerCounts[j] += 1;
+                }
+                else
+                {
+                 /// only add the power value to the bin if it is greater than 3 times the pre-burst standard deviation 
+                    if (power > 3 * preBurstPowerSetStdDev[j])
+                    {
+                        powerSums[j] += power;
+                        powerSumSquares[j] += power * power;
+                        powerCounts[j] += 1;
+                    }
+                }
                 break;
             }
         }

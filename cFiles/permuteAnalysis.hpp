@@ -26,7 +26,8 @@ class PermuteAnalysis
          * @param rateErrArray Pointer to an array of rate error values.
          * @param lenghtOfData The length of the data arrays.
          * @param numberOfTimeBins The number of time bins to use for the analysis.
-         * values will be used.
+         * @param burst A boolean indicating whether the analysis is for a burst or pre-burst.
+         * @param preBurstPowerSetStds Pointer to an array of pre-burst power set standard deviations.
          */
         PermuteAnalysis
         (
@@ -34,7 +35,9 @@ class PermuteAnalysis
             double *timeArray,
             double *rateErrArray,
             int lenghtOfData,
-            int numberOfTimeBins
+            int numberOfTimeBins,   
+            bool burst,
+            double *preBurstPowerSetStds
         );
 
         void runAnalysis();
@@ -63,6 +66,8 @@ class PermuteAnalysis
         std::atomic<int> permutationsCompleted{0};
         int totalPermutations = 0;
         std::atomic<bool> analysisComplete{false};
+        std::vector<double> preBurstPowerSetStdDev;
+        bool burst;
 
 
         // private member functions

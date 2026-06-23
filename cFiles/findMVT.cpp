@@ -12,10 +12,21 @@ extern "C" {
         double *time,
         double *rateErr,
         int lenghtOfData,
-        int numberOfTimeBins
+        int numberOfTimeBins,
+        bool burst,
+        double *preBurstPowerSetStds
     )
     {
-        return new PermuteAnalysis(rate, time, rateErr, lenghtOfData, numberOfTimeBins);
+        return new PermuteAnalysis
+        (
+            rate,
+            time,
+            rateErr,
+            lenghtOfData,
+            numberOfTimeBins,
+            burst,
+            preBurstPowerSetStds
+        );
     }
 
     void runPermuteAnalysis(PermuteAnalysis* analysis)

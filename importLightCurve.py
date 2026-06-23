@@ -18,11 +18,9 @@ class lightCurveData:
             self,
             name: str,
             burstCSVfilePath: str,
-            preBurstCSVfilePath: str
             ) -> None:
         self.name: str = name
         self.burstCSVfilePath: str = burstCSVfilePath
-        self.preBurstCSVfilePath: str = preBurstCSVfilePath
         self.csvToDataFrame()
         self.correctTime()
         self.timeInBin()
@@ -39,7 +37,6 @@ class lightCurveData:
         # itself; rather convert the columns to numpy arrays and operate on those instead, then put
         # the results back into the DataFrame if needed.
         self.data: pd.DataFrame = pd.read_csv(self.burstCSVfilePath)
-        self.preBurstData: pd.DataFrame = pd.read_csv(self.preBurstCSVfilePath)
         # If the CSV already contains a 'time' column, do not replace it by setting
         # the first column as the index. Some CSVs have an unnamed leading index
         # column, in which case keep the existing behaviour.
@@ -48,17 +45,10 @@ class lightCurveData:
             self.data.set_index(self.data.columns[0], inplace=True)
             # remove the first column name
             self.data.index.name = None
-        if 'time' not in self.preBurstData.columns:
-            # set the index to be the first column
-            self.preBurstData.set_index(self.preBurstData.columns[0], inplace=True)
-            # remove the first column name
-            self.preBurstData.index.name = None
         
         # convert all the data to numeric, coercing errors to NaN
         for column in self.data.columns:
             self.data[column] = pd.to_numeric(self.data[column], errors='coerce')
-        for column in self.preBurstData.columns:
-            self.preBurstData[column] = pd.to_numeric(self.preBurstData[column], errors='coerce')
 
 
     # method to correct the time array to be relative to the trigger time
@@ -67,8 +57,6 @@ class lightCurveData:
             ) -> None:
         triggerTime: float = self.data['time'].to_numpy()[0]
         self.data['time'] = self.data['time'] - triggerTime
-        preBurstTriggerTime: float = self.preBurstData['time'].to_numpy()[0]
-        self.preBurstData['time'] = self.preBurstData['time'] - preBurstTriggerTime
 
 
     # method to get the time in each bin
@@ -91,9 +79,6 @@ class lightCurveData:
         rate: np.ndarray = self.data['rate'].to_numpy()
         logRate: np.ndarray = np.log(np.abs(rate))
         self.data['logRate'] = logRate
-        preBurstRate: np.ndarray = self.preBurstData['rate'].to_numpy()
-        preBurstLogRate: np.ndarray = np.log(np.abs(preBurstRate))
-        self.preBurstData['logRate'] = preBurstLogRate
     
 
     # method find the uncertainty in the log of the rate
@@ -104,10 +89,6 @@ class lightCurveData:
         error: np.ndarray = self.data['error'].to_numpy()
         logRateError: np.ndarray = error / rate
         self.data['logRateErrorSquared'] = np.abs(logRateError) ** 2
-        preBurstRate: np.ndarray = self.preBurstData['rate'].to_numpy()
-        preBurstError: np.ndarray = self.preBurstData['error'].to_numpy()
-        preBurstLogRateError: np.ndarray = preBurstError / preBurstRate
-        self.preBurstData['logRateErrorSquared'] = np.abs(preBurstLogRateError) ** 2
 
 
 if __name__ == "__main__":
@@ -117,13 +98,14 @@ if __name__ == "__main__":
     grbName: str = "GRB080319B"
     burstCSVfilePath: str = "data/processed/GRB080319BLC.csv"
     preBurstCSVfilePath: str = "data/processed/GRB080319BPB.csv"
-    grbData: lightCurveData = lightCurveData(grbName, burstCSVfilePath, preBurstCSVfilePath)
+    burstData: lightCurveData = lightCurveData(grbName, burstCSVfilePath)
+    preBurstData: lightCurveData = lightCurveData(grbName, preBurstCSVfilePath)
 
     # plot the data
     fig, axs = plt.subplots(2, 1)
     axs[0].plot(
-        grbData.data['time'],
-        grbData.data['rate'],
+        burstData.data['time'],
+        burstData.data['rate'],
         color='blue',
         label='Lightcurve'
         )
@@ -132,8 +114,8 @@ if __name__ == "__main__":
     axs[0].set_xlim([-0.5, 60])
     axs[0].legend()
     axs[1].plot(
-        grbData.preBurstData['time'],
-        grbData.preBurstData['rate'],
+        preBurstData.data['time'],
+        preBurstData.data['rate'],
         color='silver',
         label='Pre-Burst Lightcurve'
         )

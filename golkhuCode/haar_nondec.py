@@ -5,17 +5,28 @@ have extensively modified the code to to be readable by me.
 
 
 
-from numpy import log,hstack,arange,round,unique,where,zeros,sqrt,cumsum,size,asarray,loadtxt,concatenate,size
+from numpy import log,hstack,arange,round,unique,where,zeros,sqrt,cumsum,size,asarray,loadtxt,concatenate,size,ndarray
 import haar_denoise
 
-def haar_nondec(file_input,nbins,dta,dta1,over_samp = 16.,nrepl = 1.,bin_fac = 2.):
+def haar_nondec(
+        fileInputPath: str,
+        numberOfBins: int,
+        dta: list,
+        dta1: list,
+        over_samp: float = 16.0,
+        numberOfRepetitions: int = 1,
+        bin_fac: float = 2.0
+        ):
     """
     """
-    DATA = loadtxt(file_input, dtype = 'float64')
-    time = DATA[:,0]; deltaTime = DATA[:,1]; rate = DATA[:,2]; deltaRate = DATA[:,3]
+    DATA: list = loadtxt(fileInputPath, dtype = 'float64')
+    time: list = DATA[:, 0]
+    deltaTime: list = DATA[:, 1]
+    rate: list = DATA[:,2]
+    deltaRate: list = DATA[:, 3]
     print('Data_Size  = %d \n'%(size(time)))
-    logRate = log(rate) 
-    deltaLogRate = deltaRate/rate
+    logRate: ndarray = log(rate) 
+    deltaLogRate: ndarray = deltaRate / rate
 
     # PAUSE
     #raw_input('press a key!')
@@ -24,31 +35,41 @@ def haar_nondec(file_input,nbins,dta,dta1,over_samp = 16.,nrepl = 1.,bin_fac = 2
     I don't have this file!
     """
     # Denoising the data
-    logRate = haar_denoise.haar_denoise(logRate,deltaLogRate); print("\n Denoising is Done! \n")
+    logRate = haar_denoise.haar_denoise(logRate,deltaLogRate)
+    print("\n Denoising is Done! \n")
     #
     #tic2 = time.time()
     #print "\n elapsed_time[1] : ", tic2-tic1
 
-    nrepl = 1   # = 1 needed for python 2 for loops
-    startTime = time.max()-time.min()
-    dt0 = deltaTime ; t0 = time ; lrate0 = logRate ; dlrate0 = deltaLogRate
-    for k in xrange(0,nrepl): # python 2 for loop
-        time = concatenate((time,t0+(k+1)*startTime))
-        deltaTime = concatenate((deltaTime,dt0))
-        logRate = concatenate((logRate,lrate0))
-        deltaLogRate = concatenate((deltaLogRate,dlrate0))
+    numberOfRepetitions: int = 1   # = 1 
+    startTime: float = time.max() - time.min()
+    deltaTime0: ndarray = deltaTime
+    logRate0: ndarray = logRate
+    deltaLogRate0: ndarray = deltaLogRate
+    for k in range(0, numberOfRepetitions):
+        time = concatenate((time, startTime + (k + 1) * startTime))
+        deltaTime = concatenate((deltaTime, deltaTime0))
+        logRate = concatenate((logRate, logRate0))
+        deltaLogRate = concatenate((deltaLogRate, deltaLogRate0))
 
     #time = time.astype('float64')
     #data = data.astype('float64')
     #ddata = ddata.astype('float64')
 
-    sum1 = zeros((nbins),dtype = 'float64') ; sum2 = zeros((nbins),dtype = 'float64')   
-    sum3 = zeros((nbins),dtype = 'float64') ; nterms = zeros((nbins),dtype = 'float64')
-    min_dta = dta.max() ; max_dta = 0.
+    sum1: ndarray = zeros((numberOfBins),dtype = 'float64')
+    sum2: ndarray = zeros((numberOfBins),dtype = 'float64')   
+    sum3: ndarray = zeros((numberOfBins),dtype = 'float64')
+    numberOfTerms: ndarray = zeros((numberOfBins),dtype = 'float64')
+    min_dta: float = dta.max()
+    max_dta: float = 0.
 
     nmax = len(logRate)
-    cx = cumsum(logRate); vx = cumsum(deltaLogRate**2); ctt = cumsum(time)
-    cx = hstack((0,cx)); vx = hstack((0,vx)); ctt = hstack((0,ctt))
+    cx = cumsum(logRate)
+    vx = cumsum(deltaLogRate**2)
+    ctt = cumsum(time)
+    cx = hstack((0,cx))
+    vx = hstack((0,vx))
+    ctt = hstack((0,ctt))
     lscl_max = log(nmax)/log(2.)
 
     scales = 2**( arange(lscl_max,dtype = 'float32') )
@@ -74,7 +95,7 @@ def haar_nondec(file_input,nbins,dta,dta1,over_samp = 16.,nrepl = 1.,bin_fac = 2
     ii0 = arange(nmax,dtype = 'int32')
 
     nn = 0
-    for k in xrange(nscales):
+    for k in range(nscales):
         scl = scales[k]
         nn1 = nn+nmax-2*scl
         ii = ii0[0:nmax-2*scl+1]
@@ -92,9 +113,9 @@ def haar_nondec(file_input,nbins,dta,dta1,over_samp = 16.,nrepl = 1.,bin_fac = 2
     ###wav = wav[g]; dwav = dwav[g]; dwav0 = dwav0[g]; delta_t = delta_t[g]; tav = tav[g]    <-------------
     #print "\n size(tav) : \n\n",size(tav)
     delta_t = delta_t[g]; tav = tav[g]
-    diff2 = (wav[g])**2 ; diff_var = ((dwav[g])**2)*(nrepl+1.)/bin_fac ; diff_var0 = (dwav0[g])**2
+    diff2 = (wav[g])**2 ; diff_var = ((dwav[g])**2)*(numberOfRepetitions+1.)/bin_fac ; diff_var0 = (dwav0[g])**2
     
-    for j in xrange(0,int(nbins)):
+    for j in range(0,int(numberOfBins)):
         h = where((delta_t >=  dta[j])*(delta_t < dta1[j])*(diff_var > 0))[0]
         #h1 = where(delta_t >=  dta[j]); h2 = where((delta_t < dta1[j])*(diff_var > 0))
         #h11 = asarray(h1); h22 = asarray(h2) # TIME KILLER LINE
@@ -105,8 +126,8 @@ def haar_nondec(file_input,nbins,dta,dta1,over_samp = 16.,nrepl = 1.,bin_fac = 2
             sum1[j] = sum(diff2[h]/diff_var0[h])
             sum2[j] = sum(1./diff_var[h])
             sum3[j] = sum(1./diff_var0[h])
-            nterms[j] = nh
+            numberOfTerms[j] = nh
             if (dta[j] < min_dta): min_dta = dta[j]
             if (dta1[j] > max_dta): max_dta = dta1[j]
     
-    return sum1,sum2,sum3,nterms,min_dta,max_dta
+    return sum1,sum2,sum3,numberOfTerms,min_dta,max_dta

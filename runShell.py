@@ -1,43 +1,58 @@
-"""
-Need to find which shell to use for the current OS.
-    def configure_shell(self) -> None:
-        """Configures non-login/login shell to initialize with heainit command"""
+import subprocess
+import sys
 
-        installdir = os.getcwd()
-        config = 0
+# class to open and run shell commands
+class ShellRunner:
+    # constructor to initialize the shell runner
+    def __init__(self) -> None:
+        self.__caldbinitString: str = ". $CALDB/software/tools/caldbinit.sh"
+        self.__headasinitString: str = ". $HEADAS/software/tools/headasinit.sh"
+        self.__openShell()  # open the shell process
+        tempShellCommandOutput: list[str] = self.tempShellCommand()  # run the temp shell command
 
-        # Loops through each specified shell initialization file
-        for conf in self.shell_config:
-            path = os.path.expandvars(os.path.join(*conf.split()))
+        
+    def shellOutputWrapper(self, function: callable) -> list[str]:
+        # wrapper function to run a shell command and get the output
+        def wrapper(*args, **kwargs) -> list[str]:
+            # run the shell command
+            function(*args, **kwargs)
+            # get the output from the shell process
+            output: list[str] = []
+            for line in iter(self.__shellProcess.stdout.readline, ''):
+                output.append(line.strip())
+            sys.stdout.flush()  # flush the output buffer
+            return output
+        return wrapper
 
-            # Checks if shell configuration file is present and writes to file if present
-            if os.path.exists(path):
-                self.__write_script(path, installdir)
-                config += 1
-                break
 
-        # Creates login configuration file if not present and writes there
-        if not config:
-            path = os.path.expandvars(os.path.join(*self.shell_config[-1].split()))
-            os.makedirs(os.path.dirname(path), exist_ok=True)
-            self.__write_script(path, installdir)
-            print(
-                f"\n{path} was not found. "
-                f"{os.path.basename(path)} has been created and can be "
-                f"found at {os.path.dirname(path)}. Make sure that {os.path.basename(path)} "
-                f"is read by {self.def_shell} before execution"
-            )
+    @shellOutputWrapper
+    def tempShellCommand(self) -> None:
+        # example shell command to run
+        self.__shellProcess.stdin.write("echo 'Running shell command...'\n")
+        self.__shellProcess.stdin.write("ls -l\n")
+        self.__shellProcess.stdin.write("echo 'Shell command finished.'\n")
+        self.__shellProcess.stdin.flush()  # flush the input buffer
 
-        return
 
-This is from the HEAInstaller (see readme.md for reference). It looks like it finds the shell by checking the shell 
-configuration files for the current OS. If it finds one, it writes a script to that file. 
+    def __openShell(self) -> None:
+        # open a new shell process as an atrubute of the class
+        self.__shellProcess: subprocess.Popen = subprocess.Popen(
+            ["sh"], # run a shell
+            shell=True, # use the shell
+            stdin=subprocess.PIPE, # pipe the input
+            stdout=subprocess.PIPE, # pipe the output
+            stderr=subprocess.PIPE, # pipe the error
+            text=True, # use text mode for input/output
+            bufsize=1, # line-buffered
+        )
 
-Use config.json for a list of shells and conme commands for them. The "source" key is really the one that I need to use. 
-Unsure if the rest is useful. 
+        
 
-Config.json is a heavily modified version of the original config.json file from HEAInstaller. I will need to assign 
-attribution to the original author of HEAInstaller in the readme.md file. Do I need to ask permission to do this?
-What is the license for HEAInstaller? I will need to check this.
 
-"""
+
+
+
+
+if __name__ == "__main__":
+    shell: ShellRunner = ShellRunner()
+

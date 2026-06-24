@@ -6,6 +6,7 @@ likely only to work on linux?
 from shellTools.runShell import ShellRunner
 from swiftDataTools.swiftBATCatalogueGRB import importData, getCoordinates, getStartStopTime
 from contextlib import chdir
+import os
 
 
 # function to open an shell terminal and process the data using the HEASoft tools
@@ -147,6 +148,8 @@ def processSwiftBATData(
             # BATCREAT= 'batmaskwtevt 1.11' / BAT Program that modified this FITS file
             version: float = 0.0
             for line in output:
+                print(line)
+            for line in output:
                 if line.startswith('BATCREAT'):
                     if 'batmaskwtevt' in line:
                         version: float = float(line.split('batmaskwtevt')[1].strip().split(' ')[0].strip('\''))
@@ -167,6 +170,7 @@ def processSwiftBATData(
         # 4. Check if the data has a mask weighting and the version of the HEASoft tools is > 6.1.2
         #     fkeyprint {filename} BAT_
         output: list[str] = shell.runShellCommand(f'fkeyprint {file} BAT_')
+        print(f'fkeyprint {file} BAT_')
         bools: list[bool] = []
         # check if there is a weighting
         if checkMaskWeighting(output):
@@ -222,6 +226,7 @@ def processSwiftBATData(
     directory, file = filename.rsplit('/', 1)
     print("Opening shell terminal")
     with chdir(directory):
+        print(os.getcwd())
         shell: ShellRunner = ShellRunner()
 
 

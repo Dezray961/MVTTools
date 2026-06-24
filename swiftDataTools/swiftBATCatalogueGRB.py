@@ -3,6 +3,25 @@ import requests
 import os
 from contextlib import chdir
 
+# decorator to change the current working directory
+def chdirDecorator(function):
+    def wrapper(*args, **kwargs):
+        currentDir: str = os.getcwd()
+        if not currentDir.endswith("data"):
+            # slit the current directory into a list
+            currentDirSplit: list[str] = currentDir.split("/")
+            # find the index of the "MVTTools" directory
+            dataIndex: int = currentDirSplit.index("MVTTools")
+            # join the list back into a string up to the "MVTTools" directory
+            chdirString: str = "/".join(currentDirSplit[:dataIndex + 1])
+        else:
+            chdirString: str = currentDir
+        with chdir(chdirString):
+            return function(*args, **kwargs)
+    return wrapper
+        
+
+
 
 # Function to return a observation id for a given GRB name
 def getObservationID(grbName: str, data: list[list[str]], isTrigID: bool = False) -> str:
@@ -79,6 +98,7 @@ def convertSummaryGeneralToList(filename: str) -> tuple[list[list[str]], list[li
 
 
 # function to updatet the data from a new summary_general.txt file
+@chdirDecorator
 def exportDataToCSV(filename: str, csvFilename: str) -> None:
     # function to write the data to a csv file
     def writeToCSV(data: list[list[str]], columnNames: list[list[str]], filename: str) -> None:

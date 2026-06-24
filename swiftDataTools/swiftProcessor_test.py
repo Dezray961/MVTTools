@@ -1,0 +1,302 @@
+"""
+test of the heasoft python tools
+"""
+
+import sys
+import os
+import heasoftpy as hsp
+from contextlib import chdir
+from swiftDataTools.swiftBATCatalogueGRB import getObservationID, importData, getCoordinates
+
+
+class ProcessSwiftData:
+    def __init__(self, GRBName: str):
+    # Check if the HEADAS environment variable is set. If it is not set, print an error message and exit the program. This is important because the HEASoft tools require the HEADAS environment variable to be set in order to function properly. If the variable is not set, the program will not be able to find the necessary tools and will fail to run. By checking for the variable at the beginning of the program, we can ensure that the user is aware of the issue and can take steps to fix it before proceeding with the data processing.
+        self.__headasPath = os.environ.get("HEADAS")
+        if self.__headasPath:
+            os.environ["PFILES"] = f"{os.environ['HOME']}/pfiles;{self.__headasPath}/syspfiles"
+        else:
+            raise EnvironmentError("Error: HEADAS environment variable not found. Did you initialize HEASoft?")
+        hsp.Config.allow_failure = False
+
+        self.GRBName = GRBName
+        self.__data, self.__columnNames = importData("swiftDataTools/summary_general.csv")
+        self.__triggerID: str = getObservationID(GRBName, self.__data, isTrigID=False)
+
+        # process the data using the HEASoft tools
+        with chdir(f"data/reproc/{self.__triggerID}/bat/event"):
+            print(os.getcwd())
+            print(f"Processing data for {GRBName}...")
+            self.__eventFilename: str = f"sw{self.__triggerID}bevshsp_uf.evt.gz"
+            
+            # check if the gain correction has been applied to the event file.
+            if not self.checkGain():
+                # correct the gain if it has not been applied.
+                self.correctGain()
+            
+            # check if the mask has been applied to the event file. 
+            if not self.checkMask():
+                # apply the mask if it has not been applied.
+                self.applyMask()
+            
+            
+
+
+
+    def unzipFile(
+            self,
+            filename: str
+        )-> None:
+        """Unzips a file using the gunzip command. This is a wrapper function for the gunzip command, which is used to unzip files that have been compressed using the gzip algorithm. The function takes in the name of the file to be unzipped, and uses the gunzip command to unzip the file. The function does not return anything, but it will print out any output from the gunzip command to the console.
+
+        Args:
+            filename (str): The name of the file to be unzipped. This should be the name of the file that has been compressed using gzip.
+        """
+        print("Unzipping file: ", filename)
+        os.system(f"gunzip {filename}")
+
+
+    def zipFile(
+            self,
+            filename: str
+        )-> None:
+        """Zips a file using the gzip command. This is a wrapper function for the gzip command, which is used to compress files using the gzip algorithm. The function takes in the name of the file to be zipped, and uses the gzip command to compress the file. The function does not return anything, but it will print out any output from the gzip command to the console.
+
+        Args:
+            filename (str): The name of the file to be zipped. This should be the name of the file that is to be compressed using gzip.
+        """
+        print("Zipping file: ", filename)
+        os.system(f"gzip {filename} -v")
+
+
+    def checkGain(
+            self
+        )-> bool:
+        """Checks the gain has been applied to BAT data. Uses `fkeyprint` to check the GAINAPP and GAINMETH keywords in the event file header.
+
+        Args:
+            filename (str): The name of the file to be checked. This should be the name of the event file. Assumes that the file is in the current working directory and is still compressed.
+
+        Returns:
+            bool: True if the gain correction has been applied, False if the gain correction has not been applied
+        """
+        print("Checking gain correction")
+        output = hsp.fkeyprint(
+            infile = self.__eventFilename,
+            keynam = "GAIN"
+            )
+        bools:list[bool] = []
+        for line in output.stdout.splitlines():
+            if line.startswith("GAINAPP"):
+                if "T" in line or "Gain correction has been applied" in line:
+                    bools.append(True)
+                else:
+                    bools.append(False)
+            if line.startswith("GAINMETH"):
+                if "FIXEDDAC" in line:
+                    bools.append(True)
+                else:
+                    bools.append(False)
+        if all(bools):
+            print("Gain correction already applied")
+        
+        return all(bools)
+
+
+    def correctGain(
+            self
+        )-> None:
+        """Corrects the gain of BAT data.
+
+        Currently needs to find the calibration file from the HEASARC FTP site.
+        /swift/data/trend/YYYY_MM/bat/bgainoffs
+        see page 31-32 of the BAT Data Analysis Guide https://swift.gsfc.nasa.gov/analysis/bat_swguide_v6_3.pdf
+        Args:
+            filename (str): The name of the file to be corrected. This should be the name of the event file. Assumes that the file is in the current working directory and is still compressed.
+
+        Returns:
+            None: This function does not return anything, but it will correct the gain of the BAT data in the specified file.
+        """
+        print("Gain correction has not been applied.")
+        print("Applying gain correction to file: ", self.__eventFilename)
+        # find the calibration file in the hk directory. 
+        self.__calibrationFile: str = f"../hk/{self.__eventFilename.replace('bevshsp_uf.evt.gz', 'bcbo01deg00ab.fits.gz')}"
+        if not os.path.exists(self.__calibrationFile):
+            ### download the calibration file - impliment this later
+            raise FileNotFoundError(f"Calibration file not found: {self.__calibrationFile}")
+
+
+        # unzip the file if it is compressed. Needed for the bateconvert command to work. 
+        if self.__eventFilename.endswith(".gz"):
+            self.unzipFile(self.__eventFilename)
+            self.__eventFilename = self.__eventFilename.replace(".gz", "")
+
+        # run the bateconvert command to correct the gain. 
+        output: hsp.BateconvertOutput = hsp.bateconvert(
+            infile = self.__eventFilename,
+            calfile = self.__calibrationFile,
+            residfile = "CALDB",
+            pulserfile = "CALDB",
+            fitpulserfile = "CALDB",
+            outfile = "NONE",
+            calmode = "INDEF",
+        )
+        print(output.stdout)
+
+
+        # zip the file back up
+        self.zipFile(self.__eventFilename)
+        self.__eventFilename = self.__eventFilename + ".gz"
+
+
+    def checkMask(
+            self
+        )-> bool:
+        
+        def checkMaskWeighting(
+            self
+        )-> bool:
+            """Checks the mask has been applied to BAT data. Uses the output from `fkeyprint` to check the MASKAPP and MASKMETH keywords in the event file header.
+
+            Args:
+                filename (str): The name of the file to be checked. This should be the name of the event file. Assumes that the file is in the current working directory and is still compressed.
+
+            Returns:
+                bool: True if the mask has been applied, False if the mask has not been applied
+            """
+            print("Checking mask weighting")
+            output = hsp.fkeyprint(
+                infile = self.__eventFilename,
+                keynam = "BAT_"
+            )
+            bools:list[bool] = []
+            for line in output.stdout.splitlines():
+                if line.startswith("BAT_RA"):
+                    splitLine: str = line.split('=')[1].strip().split('/')[0].strip()
+                    try:
+                        # do not use this value for the ra and dec as if the mask is incorrectly applied, these values will be incorrect.
+                        float(splitLine)
+                        bools.append(True)
+                    except:
+                        bools.append(False)
+                if line.startswith("BAT_DEC"):
+                    splitLine: str = line.split('=')[1].strip().split('/')[0].strip()
+                    try:
+                        float(splitLine)
+                        bools.append(True)
+                    except:
+                        bools.append(False)
+            if all(bools):
+                print("Mask weighting already applied")
+            
+            return all(bools)
+
+
+        def checkMaskVersion(
+            self
+        )-> bool:
+            """Checks the `batmaskwtevt` version that has been applied to the data. Uses the output from `fkeyprint` to check the MASKVER keyword in the event file header.
+
+            Args:
+                output (hsp.FKeyPrintOutput): _description_
+
+            Returns:
+                bool: _description_
+            """
+            print("Checking batmaskwtevt version")
+            output = hsp.fkeyprint(
+                infile = self.__eventFilename,
+                keynam = "BATCREAT"
+            )
+            bools:list[bool] = []
+            for line in output.stdout.splitlines():
+                if line.startswith("BATCREAT"):
+                    if "batmaskwtevt" in line:
+                        version: float = float(line.split('batmaskwtevt')[1].strip().split(' ')[0].strip('\''))
+                        if version >= 1.16:
+                            bools.append(True)
+                            print(f"batmaskwtevt version is {version}>= 1.16") 
+                        else:
+                            bools.append(False)
+                            print(f"batmaskwtevt version is {version}< 1.16")
+                    else:
+                        bools.append(False)
+            return all(bools)
+
+
+        bools: list[bool] = []
+        bools.append(checkMaskWeighting(self))
+        bools.append(checkMaskVersion(self))
+        return all(bools)
+
+
+    def applyMask(
+            self
+        )-> None:
+        """Applies the mask to BAT data. Uses `batmaskwtevt` to apply the mask to the event file.
+
+        Args:
+            filename (str): The name of the file to be masked. This should be the name of the event file. Assumes that the file is in the current working directory and is still compressed.
+        """
+        print("Mask has not been applied.")
+        print("Applying mask to file: ", self.__eventFilename)
+
+        # find the attitude file in the aux directory.
+        self.__attitudeFile: str = f"../aux/{self.__eventFilename.replace('bevshsp_uf.evt.gz', 'sat.fits.gz')}"
+        if not os.path.exists(self.__attitudeFile):
+            ### download the attitude file - impliment this later
+            raise FileNotFoundError(f"Attitude file not found: {self.__attitudeFile}")
+            
+        # find the quality map file in the hk directory.
+        self.__qualityMapFile: str = f"../hk/{self.__eventFilename.replace('bevshsp_uf.evt.gz', 'bdqcb.hk.gz')}"
+        if not os.path.exists(self.__qualityMapFile):
+            ### download the quality map file - impliment this later
+            raise FileNotFoundError(f"Quality map file not found: {self.__qualityMapFile}")
+
+        # unzip the file if it is compressed. Needed for the batmaskwtevt command to work. 
+        if self.__eventFilename.endswith(".gz"):
+            self.unzipFile(self.__eventFilename)
+            self.__eventFilename = self.__eventFilename.replace(".gz", "")
+
+        # find the right ascension and declination of the GRB from the summary_general.csv file.
+        self.__rightAscension, self.__declination = getCoordinates(self.__triggerID, self.__data)
+
+        # run the batmaskwtevt command to apply the mask.
+        output: hsp.BatmaskwtevtOutput = hsp.batmaskwtevt(
+            infile = self.__eventFilename,
+            attitude = self.__attitudeFile,
+            ra = self.__rightAscension,
+            dec = self.__declination,
+            detmask = self.__qualityMapFile,
+            rebalance = "YES",
+            corrections = "default",
+            auxfile = f"/local/data/gcn5b/craigm/{self.__triggerID}bevtr.fits",
+            clobber = "YES"
+        )
+
+        # zip the file back up
+        self.zipFile(self.__eventFilename)
+        self.__eventFilename = self.__eventFilename + ".gz"
+
+
+
+
+
+
+
+
+
+if __name__ == "__main__":
+    GRBName: str = "GRB080319B"
+    data: ProcessSwiftData = ProcessSwiftData(GRBName)
+
+
+
+"""
+
+3. get the start and stop times of the burst
+4. run batbinevt to create the light curve (uniform bins)
+    a. pre-burst
+    b. burst
+5. convert the light curve data into a CSV file
+"""

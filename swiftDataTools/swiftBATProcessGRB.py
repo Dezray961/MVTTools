@@ -13,6 +13,7 @@ from contextlib import chdir
 from pathlib import Path
 import pandas as pd
 import shutil
+import os
 
 # function to process the data into a usable format for analysis
 def processSwiftBATData(
@@ -61,6 +62,7 @@ def processSwiftBATData(
                 directory: str,
                 filename: str
                 ) -> tuple[pd.DataFrame, pd.DataFrame]:
+            print(os.getcwd())
             with open(f'{directory}/{filename}.txt', 'r') as outputFile:
                 lines: list[str] = outputFile.readlines()
             # find the gap lines

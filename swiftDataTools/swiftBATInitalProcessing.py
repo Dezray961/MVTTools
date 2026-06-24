@@ -3,8 +3,9 @@ code expects a file name string as an argument
 likely only to work on linux?
 """
 
-import pexpect
+from shellTools.runShell import ShellRunner
 from swiftDataTools.swiftBATCatalogueGRB import importData, getCoordinates, getStartStopTime
+from contextlib import chdir
 
 
 # function to open an shell terminal and process the data using the HEASoft tools
@@ -28,31 +29,37 @@ def processSwiftBATData(
     """
     # helper functions
     # function to unzip a file if it is compressed
-    def unzipFile(shell: pexpect.spawn, file: str) -> None:
+    def unzipFile(
+            shell: ShellRunner,
+            file: str
+            ) -> None:
         # gunzip sw*.evt.gz
-        shell.sendline(f'gunzip sw*.evt.gz')
-        shell.expect(f'{file[:-3]}')
+        shell.runShellCommand(f'gunzip sw*.evt.gz')
 
 
     # function to zip a file if it is uncompressed
-    def zipFile(shell: pexpect.spawn, file: str) -> None:
+    def zipFile(
+            shell: ShellRunner,
+            file: str
+            ) -> None:
         # gzip sw*.evt
-        shell.sendline(f'gzip sw*.evt -v')
-        shell.expect(f'{file}', timeout=None) # this can take a while, so set the timeout to None
+        shell.runShellCommand(f'gzip sw*.evt -v')
+        # this can take a while, so set the timeout to None
 
 
     # function to check if the gain correction has been applied to the data
-    def checkGainCorrection(shell: pexpect.spawn, file: str) -> bool:
+    def checkGainCorrection(
+            shell: ShellRunner,
+            file: str
+            ) -> bool:
         print("Checking gain correction")
-        shell.sendline(f'fkeyprint {file} GAIN')
-        shell.expect('GAINAPP')
-        with open('shellOutput.txt', 'r') as f:
-            lines: list[str] = f.readlines()
+        output: list[str] = shell.runShellCommand(f'fkeyprint {file} GAIN')
+        # this can take a while
         bools: list[bool] = []
         # There should be:
         # GAINAPP = T / Gain correction has been applied
         # GAINMETH= 'FIXEDDAC' / Cubic ground gain/offset correction using DAC-b
-        for line in lines:
+        for line in output:
             if line.startswith('GAINAPP'):
                 if 'T' in line or "Gain correction has been applied" in line:
                     bools.append(True)
@@ -70,7 +77,10 @@ def processSwiftBATData(
 
 
     # function to apply the gain correction to the data
-    def correctGain(shell: pexpect.spawn, file: str) -> None:
+    def correctGain(
+            shell: ShellRunner,
+            file: str
+            ) -> None:
         print("Applying gain correction")
         # if the file is compressed, uncompress it
         if file.endswith('.gz'):
@@ -85,24 +95,26 @@ def processSwiftBATData(
 
         # apply the gain correction
         #     bateconvert infile=sw00306757000bevshsp_uf.evt calfile=../hk/sw00306757000bcbo01deg00ab.fits.gz residfile=CALDB pulserfile=CALDB fitpulserfile=CALDB outfile=NONE calmode=INDEF
-        shell.sendline(f'bateconvert infile={file[:-3]} calfile=../hk/{file.split("sw")[1].split("bev")[0]}bcbo01deg00ab.fits.gz residfile=CALDB pulserfile=CALDB fitpulserfile=CALDB outfile=NONE calmode=INDEF')
-        shell.expect('bateconvert')
+        shell.runShellCommand(f'bateconvert infile={file[:-3]} calfile=../hk/{file.split("sw")[1].split("bev")[0]}bcbo01deg00ab.fits.gz residfile=CALDB pulserfile=CALDB fitpulserfile=CALDB outfile=NONE calmode=INDEF')
         # rezip the file
         zipFile(shell, file)
         
 
     # function to check the mask weighting and version of the HEASoft tools
-    def checkMask(shell: pexpect.spawn, file: str) -> None:
+    def checkMask(
+            shell: ShellRunner,
+            file: str
+            ) -> None:
         # helper function to check if the mask weighting has been applied to the data
-        def checkMaskWeighting() -> bool:
-            with open('shellOutput.txt', 'r') as f:
-                lines: list[str] = f.readlines()
+        def checkMaskWeighting(
+                output: list[str]
+                ) -> bool:
             bools: list[bool] = []
             # a. check if the data has a mask weighting
             # There should be something like:
             #   BAT_RA = 320.5402 / [deg] Right ascension of source
             # BAT_DEC = 77.0751 / [deg] Declination of source
-            for line in lines:
+            for line in output:
                 if line.startswith('BAT_RA'):
                     splitLine: str = line.split('=')[1].strip().split('/')[0].strip()
                     try:
@@ -126,15 +138,15 @@ def processSwiftBATData(
 
 
         # helperfunction to check the version of the HEASoft tools is > 6.1.2
-        def checkMaskVersion() -> bool:
-            with open('shellOutput.txt', 'r') as f:
-                lines: list[str] = f.readlines()
+        def checkMaskVersion(
+                output: list[str],
+        ) -> bool:
             bools: list[bool] = []
             # b. check the version of the HEASoft tools > 6.1.2
             # There should be something like:
             # BATCREAT= 'batmaskwtevt 1.11' / BAT Program that modified this FITS file
             version: float = 0.0
-            for line in lines:
+            for line in output:
                 if line.startswith('BATCREAT'):
                     if 'batmaskwtevt' in line:
                         version: float = float(line.split('batmaskwtevt')[1].strip().split(' ')[0].strip('\''))
@@ -154,18 +166,15 @@ def processSwiftBATData(
         print("Checking mask weighting and HEASoft version")
         # 4. Check if the data has a mask weighting and the version of the HEASoft tools is > 6.1.2
         #     fkeyprint {filename} BAT_
-        shell.sendline(f'fkeyprint {file} BAT_')
-        shell.expect('BAT_RA')
+        output: list[str] = shell.runShellCommand(f'fkeyprint {file} BAT_')
         bools: list[bool] = []
         # check if there is a weighting
-        if checkMaskWeighting():
+        if checkMaskWeighting(output):
             bools.append(True)
         else:
             bools.append(False)
-        shell.sendline(f'fkeyprint {file} BATCREAT')
-        shell.expect('FILE')
         # check the version of the HEASoft tools > 6.1.2 (looking for batmaskwtevt version > 1.16)
-        if checkMaskVersion():
+        if checkMaskVersion(output):
             bools.append(True)
         else:
             bools.append(False)
@@ -175,7 +184,7 @@ def processSwiftBATData(
 
     # function to apply the mask weighting to the data
     def correctMask(
-            shell: pexpect.spawn,
+            shell: ShellRunner,
             file: str,
             data: list[list[str]]
             ) -> None:
@@ -189,10 +198,9 @@ def processSwiftBATData(
         # apply the mask weighting
             # batmaskwtevt infile={unzipped file} attitude=../../auxil/sw00306757000sat.fits.gz ra=320.5397083 dec=+77.074861 detmask=../hk/sw00306757000bdqcb.hk.gz rebalance=YES corrections=default auxfile=/local/data/gcn5b/craigm/sw00306757000bevtr.fits clobber=YES
             # This can take several minutes per file.
-        shell.sendline(f'batmaskwtevt infile={file[:-3]} attitude=../../auxil/sw{file.split("sw")[1].split("bev")[0]}sat.fits.gz ra={ra} dec={dec} detmask=../hk/{file.split("sw")[1].split("bev")[0]}bdqcb.hk.gz rebalance=YES corrections=default auxfile=/local/data/gcn5b/craigm/{file.split("sw")[1].split("bev")[0]}bevtr.fits clobber=YES')
+        output = shell.runShellCommand(f'batmaskwtevt infile={file[:-3]} attitude=../../auxil/sw{file.split("sw")[1].split("bev")[0]}sat.fits.gz ra={ra} dec={dec} detmask=../hk/{file.split("sw")[1].split("bev")[0]}bdqcb.hk.gz rebalance=YES corrections=default auxfile=/local/data/gcn5b/craigm/{file.split("sw")[1].split("bev")[0]}bevtr.fits clobber=YES')
         print(f'batmaskwtevt infile={file[:-3]} attitude=../../auxil/sw{file.split("sw")[1].split("bev")[0]}sat.fits.gz ra={ra} dec={dec} detmask=../hk/{file.split("sw")[1].split("bev")[0]}bdqcb.hk.gz rebalance=YES corrections=default auxfile=/local/data/gcn5b/craigm/{file.split("sw")[1].split("bev")[0]}bevtr.fits clobber=YES')
-        shell.expect('batmaskwtevt v')
-        shell.expect('ERROR')
+        
 
 
         ##########################################################################################
@@ -213,70 +221,51 @@ def processSwiftBATData(
     # split the file name into a directory and a file name
     directory, file = filename.rsplit('/', 1)
     print("Opening shell terminal")
-    shell = pexpect.spawn("sh", encoding='utf-8')
-    logFile = open('shellOutput.txt', 'w')
-    shell.logfile_read = logFile
-    shell.sendline(f'cd {directory}')
-    shell.expect(f'{directory}.*') # wait for the prompt to change to the new directory
-
-    # 2. initilaise the HEASoft tools
-    print("Initialising HEASoft tools")
-    shell.sendline('source $CALDB/software/tools/caldbinit.sh')
-    shell.expect('CALDB/software/tools/caldbinit.sh') 
-    shell.sendline('source $HEADAS/headas-init.sh')
-    shell.expect('headas-init.sh')
+    with chdir(directory):
+        shell: ShellRunner = ShellRunner()
 
 
+        # 2. Check if the data has the correct energy scale
+        if not checkGainCorrection(shell, file):
+            correctGain(shell, file)
 
-    # 3. Check if the data has the correct energy scale
-    if not checkGainCorrection(shell, file):
-        correctGain(shell, file)
+        # 3. Check if the data has a mask weighting and the version of the HEASoft tools is > 6.1.2
+        data, _ = importData('summary_general.csv')
+        if not checkMask(shell, file):
+            correctMask(shell, file, data)
 
-    # 4. Check if the data has a mask weighting and the version of the HEASoft tools is > 6.1.2
-    data, _ = importData('summary_general.csv')
-    if not checkMask(shell, file):
-        correctMask(shell, file, data)
+        # 4. Extract the light curve from the data
+        # find the start and stop time of the GRB from the catalogue
 
-    # 5. Extract the light curve from the data
-    # find the start and stop time of the GRB from the catalogue
+        # get the start and stop time of the GRB from the catalogue
+        startTime, stopTime, t90Error = getStartStopTime(GRBName, data)
 
-    # get the start and stop time of the GRB from the catalogue
-    startTime, stopTime, t90Error = getStartStopTime(GRBName, data)
+        # get the light curve for the pre-burst data
+        print("Extracting pre-burst light curve")
+        lightCurveCommand: str = f'batbinevt infile={file[:-3]} outfile=outputPB.lc outtype=LC timedel=0.0001 timebinalg=u energybins={energyBins} detmask=../hk/sw{file.split("sw")[1].split("bev")[0]}bdqcb.hk.gz tstart={startTime-30} tstop={startTime} clobber=YES'
+        shell.runShellCommand(lightCurveCommand)
 
-    # get the light curve for the pre-burst data
-    print("Extracting pre-burst light curve")
-    lightCurveCommand: str = f'batbinevt infile={file[:-3]} outfile=outputPB.lc outtype=LC timedel=0.0001 timebinalg=u energybins={energyBins} detmask=../hk/sw{file.split("sw")[1].split("bev")[0]}bdqcb.hk.gz tstart={startTime-30} tstop={startTime} clobber=YES'
-    shell.sendline(lightCurveCommand)
-    shell.expect('batbinevt v')
-    shell.expect(['ERROR', 'written'])
-    shell.expect('----')
+        print("Extracting the burst light curve")
 
-    print("Extracting the burst light curve")
+        if not fullDataSet:
+            timeString: str = f"tstart={startTime} tstop={stopTime} "
+        else:
+            timeString: str = ""
+        # if the time deliniation is 0, use the SNR to determine the time bins
+        if timeDeliniation != 0.0:
+            timebinalg: str = "u"
+            timeDeliniationString: str = f"timedel={timeDeliniation} "
+        else:
+            timeDeliniationString = f"snrthresh={SNRThreshold} timedel=0 "
+            timebinalg: str = "snr"
+        # batbinevt infile={filename} outfile=onesec.lc outtype=LC timedel=1.0 timebinalg=u energybins=15-150 detmask=../hk/sw00306757000bdqcb.hk.gz clobber=YES
+        lightCurveCommand: str = f'batbinevt infile={file[:-3]} outfile=output.lc outtype=LC {timeDeliniationString}timebinalg={timebinalg} energybins={energyBins} detmask=../hk/sw{file.split("sw")[1].split("bev")[0]}bdqcb.hk.gz {timeString}clobber=YES'
+        shell.runShellCommand(lightCurveCommand)
 
-    if not fullDataSet:
-        timeString: str = f"tstart={startTime} tstop={stopTime} "
-    else:
-        timeString: str = ""
-    # if the time deliniation is 0, use the SNR to determine the time bins
-    if timeDeliniation != 0.0:
-        timebinalg: str = "u"
-        timeDeliniationString: str = f"timedel={timeDeliniation} "
-    else:
-        timeDeliniationString = f"snrthresh={SNRThreshold} timedel=0 "
-        timebinalg: str = "snr"
-    # batbinevt infile={filename} outfile=onesec.lc outtype=LC timedel=1.0 timebinalg=u energybins=15-150 detmask=../hk/sw00306757000bdqcb.hk.gz clobber=YES
-    lightCurveCommand: str = f'batbinevt infile={file[:-3]} outfile=output.lc outtype=LC {timeDeliniationString}timebinalg={timebinalg} energybins={energyBins} detmask=../hk/sw{file.split("sw")[1].split("bev")[0]}bdqcb.hk.gz {timeString}clobber=YES'
-    shell.sendline(lightCurveCommand)
-#    if timebinalg == "snr":
-#        shell.expect('Histogram')
-#        shell.send('\n')
-    shell.expect('batbinevt v')
-    shell.expect(['ERROR', 'written'])
-    shell.expect('----')
 
-    # Close the shell terminal
-    print("Closing shell terminal")
-    shell.close()
+        # Close the shell terminal
+        print("Closing shell terminal")
+        shell.closeShell()
 
 
 if __name__ == "__main__":

@@ -1,5 +1,7 @@
 import pandas as pd
 import requests
+import os
+from contextlib import chdir
 
 
 # Function to return a observation id for a given GRB name
@@ -90,9 +92,16 @@ def exportDataToCSV(filename: str, csvFilename: str) -> None:
 
 # function to import the data from a csv file
 def importData(filename: str) -> tuple[list[list[str]], list[str]]:
-    df = pd.read_csv(filename).fillna('').convert_dtypes()
-    data = df.values.tolist()
-    columnNames = df.columns.tolist()
+    currentDir: str = os.getcwd()
+    if currentDir.endswith("event"):
+        with chdir("../../../../../"):
+            df = pd.read_csv(filename).fillna('').convert_dtypes()
+            data = df.values.tolist()
+            columnNames = df.columns.tolist()
+    else:
+        df = pd.read_csv(filename).fillna('').convert_dtypes()
+        data = df.values.tolist()
+        columnNames = df.columns.tolist()
     return data, columnNames
 
 

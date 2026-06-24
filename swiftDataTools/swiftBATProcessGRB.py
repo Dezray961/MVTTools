@@ -8,7 +8,7 @@ Further, the SwiftBAT tools should be in their own directory.
 import swiftDataTools.swiftBATCatalogueGRB as catalogue
 import swiftDataTools.swiftBATDataFetcher as fetcher
 import swiftDataTools.swiftBATInitalProcessing as processing
-import pexpect
+from shellTools.runShell import ShellRunner
 from contextlib import chdir
 from pathlib import Path
 import pandas as pd
@@ -45,17 +45,15 @@ def processSwiftBATData(
             ) -> None:
         # function to run fdump
         def runFdump(
-                shell: pexpect.spawn,
+                shell: ShellRunner,
                 filename: str
                 ) -> None:
             # run the command to convert the light curve data into a CSV file
-            shell.sendline(f'fdump {filename}.lc outfile={filename}.txt prhead=no clobber=yes && echo Done')
-            shell.expect(f'fdump {filename}', timeout = None)
-            shell.expect('(?i)Names')
-            shell.send('\n')
-            shell.expect('(?i)Lists')
-            shell.send('\n')
-            shell.expect('Done', timeout = None)
+            fdumpCommand: str = f'fdump {filename}.lc outfile={filename}.txt prhead=no clobber=yes columns="*" rows="-"'
+            shellOutput: list[str] = shell.runShellCommand(fdumpCommand)
+            for line in shellOutput:
+                print(line)
+
 
 
         # function to read in the data, find the gap lines and return the data blocks as pandas DataFrames
@@ -97,19 +95,13 @@ def processSwiftBATData(
         directory: str = filename.rsplit("/", 1)[0]
         # open a shell
         with chdir(directory):
-            shell = pexpect.spawn("sh", encoding = 'utf-8')
-            logFile = open('shellOutput.txt', 'w')
-            shell.logfile_read = logFile
-            # initilaise the HEASoft tools
-            shell.sendline('source $CALDB/software/tools/caldbinit.sh')
-            shell.expect('CALDB/software/tools/caldbinit.sh') 
-            shell.sendline('source $HEADAS/headas-init.sh')
-            shell.expect('headas-init.sh') 
+            shell: ShellRunner = ShellRunner()
             # run the command to convert the pre-burst light curve data into a CSV file
             runFdump(shell, f"outputPB")
             # run the command to convert the burst light curve data into a CSV file
             runFdump(shell, f"output")
-            shell.close()
+            shell.closeShell()
+            
         
         # create a new file path for the CSV file
         Path('data/processed').mkdir(parents=True, exist_ok=True)

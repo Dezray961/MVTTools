@@ -15,7 +15,7 @@ to be run in the data folder to be compatible with initialProcessing.py
 Only the initial 000 file has the event data
 
 """
-import pexpect
+from shellTools.runShell import ShellRunner
 from swiftDataTools.swiftBATCatalogueGRB import importData, getObservationID
 from contextlib import chdir
 
@@ -58,8 +58,9 @@ def downloadSwiftBATData(wgetStatement: str) -> None:
     """
     # change the working directory to the data folder. Returns to the original working directory after.
     with chdir("data"): 
-        shell = pexpect.run(wgetStatement, timeout=None)
-    
+        shell = ShellRunner()
+        shell.runShellCommand(wgetStatement)
+        shell.closeShell()
 
 if __name__ == "__main__":
     grbName = "GRB080319B"

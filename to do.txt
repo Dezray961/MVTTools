@@ -25,7 +25,7 @@ Make a script that can plot the MVT as a function of time for a full GRB
 More vague
 Impliment tools to import Fermi data and process it to the same state as the SwiftBAT data
 Set up VPN on desktop
-Split out shell operations into a seperate script
+Split out shell operations into a seperate script doing at home
 Add check for ubuntu/fedora to ensure correct "source" command
 
 

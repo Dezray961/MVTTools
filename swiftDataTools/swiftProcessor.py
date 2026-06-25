@@ -6,11 +6,17 @@ import sys
 import os
 import heasoftpy as hsp
 from contextlib import chdir
-from swiftDataTools.swiftBATCatalogueGRB import getObservationID, importData, getCoordinates
+from swiftDataTools.swiftBATCatalogueGRB import getObservationID, importData, getCoordinates, getStartStopTime
+from pathlib import Path
+from shutil import move
 
 
 class ProcessSwiftData:
-    def __init__(self, GRBName: str):
+    def __init__(
+            self,
+            GRBName: str,
+            energyBins: str = "15-350"
+            )-> None:
     # Check if the HEADAS environment variable is set. If it is not set, print an error message and exit the program. This is important because the HEASoft tools require the HEADAS environment variable to be set in order to function properly. If the variable is not set, the program will not be able to find the necessary tools and will fail to run. By checking for the variable at the beginning of the program, we can ensure that the user is aware of the issue and can take steps to fix it before proceeding with the data processing.
         self.__headasPath = os.environ.get("HEADAS")
         if self.__headasPath:
@@ -20,8 +26,16 @@ class ProcessSwiftData:
         hsp.Config.allow_failure = False
 
         self.GRBName = GRBName
+        self.energyBins = energyBins
         self.__data, self.__columnNames = importData("swiftDataTools/summary_general.csv")
-        self.__triggerID: str = getObservationID(GRBName, self.__data, isTrigID=False)
+        self.__triggerID: str = getObservationID(
+            GRBName,
+            self.__data,
+            isTrigID=False
+            )
+
+        # create the output directory if it does not exist
+        Path(f"data/processed/{self.GRBName}").mkdir(parents=True, exist_ok=True)
 
         # process the data using the HEASoft tools
         with chdir(f"data/reproc/{self.__triggerID}/bat/event"):
@@ -38,9 +52,34 @@ class ProcessSwiftData:
             if not self.checkMask():
                 # apply the mask if it has not been applied.
                 self.applyMask()
-            
-            
 
+            # get the start and stop times of the burst from the summary_general.csv file.
+            self.__startTime, self.__stopTime, _ = getStartStopTime(
+                self.GRBName,
+                self.__data
+            )
+
+            # extract the light curves
+            for period in range(2):
+                self.extractLightCurve(period)
+                self.convertLightCurveToCSV(period)
+
+            print("Data processing complete.")
+            # move the light curve CSV files to the processed data directory
+            # find the directory contents
+            dirContents: list[str] = os.listdir(os.getcwd())
+        print("Tidying up the directory...")
+        for file in dirContents:
+            inFilePath: str = f"data/reproc/{self.__triggerID}/bat/event/{file}"
+            if file.endswith(".csv"):
+                move(
+                    inFilePath,
+                    f"data/processed/{self.GRBName}/{file}"
+                )
+            elif file.endswith(".lc"):
+                filePath: Path = Path(inFilePath)
+                filePath.unlink()
+        print("Tidying up complete. Light curve CSV files moved to processed data directory.")
 
 
     def unzipFile(
@@ -85,6 +124,7 @@ class ProcessSwiftData:
             infile = self.__eventFilename,
             keynam = "GAIN"
             )
+        print(output.stdout)
         bools:list[bool] = []
         for line in output.stdout.splitlines():
             if line.startswith("GAINAPP"):
@@ -169,6 +209,7 @@ class ProcessSwiftData:
                 infile = self.__eventFilename,
                 keynam = "BAT_"
             )
+            print(output.stdout)
             bools:list[bool] = []
             for line in output.stdout.splitlines():
                 if line.startswith("BAT_RA"):
@@ -208,6 +249,7 @@ class ProcessSwiftData:
                 infile = self.__eventFilename,
                 keynam = "BATCREAT"
             )
+            print(output.stdout)
             bools:list[bool] = []
             for line in output.stdout.splitlines():
                 if line.startswith("BATCREAT"):
@@ -273,14 +315,134 @@ class ProcessSwiftData:
             auxfile = f"/local/data/gcn5b/craigm/{self.__triggerID}bevtr.fits",
             clobber = "YES"
         )
+        print(output.stdout)
 
         # zip the file back up
         self.zipFile(self.__eventFilename)
         self.__eventFilename = self.__eventFilename + ".gz"
 
 
+    def extractLightCurve(
+            self,
+            period: int,
+            customTimeRange: tuple[float, float] = None
+        )-> None:
+        """Extracts the lightcurve using `batbinevt`.
+
+        Args:
+            period (int): Time period to extract the light curve for. 0 = pre-burst, 1 = burst, 2 = post-burst, 3 = custom. If custom is selected, the user must provide `customTimeRange`
+            customTimeRange (tuple[float, float], optional): Custom time range to extract a custom light curve for. Defaults to None.
+
+        Raises:
+            ValueError: If the period is not 0, 1, 2, or 3, or if the period is 3 and no custom time range is provided.
+        """
+        # determine the start and stop times for the light curve extraction
+        match period:
+            case 0: # pre-burst
+                fileName: str = "outputPreBurst.lc"
+                startTime: float = self.__startTime - 30
+                stopTime: float = self.__startTime
+                print("Extracting pre-burst uniform light curve")
+            case 1: # burst
+                fileName: str = "outputBurst.lc"
+                startTime: float = self.__startTime
+                stopTime: float = self.__stopTime
+                print("Extracting burst uniform light curve")
+            case 2: # post-burst
+                fileName: str = "outputPostBurst.lc"
+                startTime: float = self.__stopTime
+                stopTime: float = self.__stopTime + 30
+                print("Extracting post-burst uniform light curve")
+            case 3: # custom
+                if customTimeRange is None:
+                    raise ValueError("Custom time range must be provided for period 3")
+                fileName: str = "outputCustom.lc"
+                startTime: float = customTimeRange[0]
+                stopTime: float = customTimeRange[1]
+                print("Extracting custom uniform light curve")
+            case _:
+                raise ValueError("Invalid period. Must be 0 (pre-burst), 1 (burst), 2 (post-burst), or 3 (custom).")
+        
+        # run batbinevt to create the light curve (uniform bins)
+        output: hsp.BatbinevtOutput = hsp.batbinevt(
+            infile = self.__eventFilename,
+            outfile = fileName,
+            outtype = "LC",
+            timedel = 100e-6,
+            timebinalg = "u",
+            energybins = self.energyBins,
+            detmask = f"../hk/sw{self.__triggerID}bdqcb.hk.gz",
+            tstart = startTime,
+            tstop = stopTime,
+            clobber = "YES"
+        )
+        print(output.stdout)
 
 
+    def convertLightCurveToCSV(
+            self,
+            period: int
+            ) -> None:
+
+
+        # determine parameters for writing the light curve data to a CSV file based on the period
+        match period:
+            case 0: # pre-burst
+                inFileName: str = "outputPreBurst.lc"
+                outFileName: str = f"{self.GRBName}PreBurstLC.csv"
+                print("Converting pre-burst uniform light curve to CSV")
+            case 1: # burst
+                inFileName: str = "outputBurst.lc"
+                outFileName: str = f"{self.GRBName}BurstLC.csv"
+                print("Converting burst uniform light curve to CSV")
+            case 2: # post-burst
+                inFileName: str = "outputPostBurst.lc"
+                outFileName: str = f"{self.GRBName}PostBurstLC.csv"
+                print("Converting post-burst uniform light curve to CSV")
+            case 3: # custom
+                inFileName: str = "outputCustom.lc"
+                outFileName: str = f"{self.GRBName}CustomLC.csv"
+                print("Converting custom uniform light curve to CSV")
+            case _:
+                raise ValueError("Invalid period. Must be 0 (pre-burst), 1 (burst), 2 (post-burst), or 3 (custom).")
+
+        # use fdump to convert the light curve data into a text file
+        output: hsp.FdumpOutput = hsp.fdump(
+            infile = inFileName,
+            outfile = outFileName,
+            prhead = "no",
+            clobber = "yes",
+            columns = "*",
+            rows = "-",
+            showunit = "no",
+            fldsep = " ",
+            align = "no",
+            more = "yes",
+            pagewidth = 150,
+            showrow = "no"
+        )
+        print(output.stdout)
+
+        # clean the CSV file by removing empty lines and stripping whitespace from the lines
+        print("Cleaning CSV file")
+        with open(outFileName, 'r') as f:
+            lines: list[str] = f.readlines()
+        # remove empty lines
+        lines = [line for line in lines if line.strip()]
+        # find the length of the first line
+        firstLineLength: int = len(lines[0].split())
+        # remove lines that do not have the same number of columns as the first line and strip whitespace
+        tempLines: list[str] = []
+        for line in lines:
+            line = line.split()
+            if len(line) >= firstLineLength:
+                line = ','.join(line) + '\n'
+                tempLines.append(line)
+        lines = tempLines
+
+        # write the cleaned lines back to the CSV file
+        with open(outFileName, 'w') as f:
+            f.writelines(lines)
 
 
 
@@ -291,12 +453,3 @@ if __name__ == "__main__":
     data: ProcessSwiftData = ProcessSwiftData(GRBName)
 
 
-
-"""
-
-3. get the start and stop times of the burst
-4. run batbinevt to create the light curve (uniform bins)
-    a. pre-burst
-    b. burst
-5. convert the light curve data into a CSV file
-"""

@@ -133,7 +133,19 @@ def getCoordinates(trigID: str, data: list[list[str]]) -> tuple[float, float]:
         
 
 # function to get the start/stop time of a GRB given its GRB name
-def getStartStopTime(grbName: str, data: list[list[str]]) -> tuple[float, float, float]:
+def getStartStopTime(
+        grbName: str,
+        data: list[list[str]]
+        ) -> tuple[float, float, float]:
+    """Gets the start, stop and t90 times for a given GRB name
+
+    Args:
+        grbName (str): The name of the GRB to get the start and stop times for
+        data (list[list[str]]): The data containing the GRB information
+
+    Returns:
+        tuple[float, float, float]: The start, stop, and t90 times for the GRB
+    """
     triggerTime: float = 0.0
     t90Time: float = 0.0
     t90Error: float = 0.0

@@ -5,14 +5,10 @@ os as it will automatically change back to the original working directory when t
 Further, the SwiftBAT tools should be in their own directory.
 """
 
-import swiftDataTools.swiftBATCatalogueGRB as catalogue
-import swiftDataTools.swiftBATDataFetcher as fetcher
+from swiftDataTools.swiftBATCatalogueGRB import importData, getObservationID
+from swiftDataTools.swiftBATDataFetcher import generateWgetStatement, downloadSwiftBATData
 from swiftDataTools.swiftProcessor import ProcessSwiftData
-from contextlib import chdir
-from pathlib import Path
-import pandas as pd
-import shutil
-import os
+from shutil import rmtree
 
 # function to process the data into a usable format for analysis
 def processSwiftBATData(
@@ -25,9 +21,7 @@ def processSwiftBATData(
 
     Args:
         GRBName (str): The name of the GRB to be processed. Fomatted as "GRBYYMMDDX", where X is the letter assigned to the GRB. 
-        SNRThreshold (float): The signal-to-noise ratio threshold to be used in the light curves bins. This will determine the size of the time bins in the light curves, with higher SNR thresholds resulting in larger time bins. If timeBinSize is provided, this will be ignored and the time bins will be of the specified size instead.
         energyRange (str): The energy range to be used in the light curves. This should be in the format "min-max", where min and max are the minimum and maximum energies in keV. The BAT sensor has a energy range of 15-350 keV.
-        timeBinSize (float): The size of the time bins, in seconds, to be used in the light curves.
         download (bool): Whether to download the data from the swift.ac.uk archive. If False, it is assumed that the data has already been downloaded and is available in the "data/reproc" directory.
         deleteOriginal (bool): Whether to delete the original data file after processing. If True, the original data file will be deleted after the processed data has been saved.
 
@@ -36,17 +30,17 @@ def processSwiftBATData(
     """
 
     # generate the wget statement to download the data for the given GRB name
-    wgetStatement: str = fetcher.generateWgetStatement(GRBName)
+    wgetStatement: str = generateWgetStatement(GRBName)
 
     # download the data using the generated wget statement
     if download:
         print(f"Downloading data for {GRBName}...")
-        fetcher.downloadSwiftBATData(wgetStatement)
+        downloadSwiftBATData(wgetStatement)
         print("Download complete.")
 
     # generate the file path for the downloaded data
-    data, _ = catalogue.importData('summary_general.csv')
-    observationID: str = catalogue.getObservationID(GRBName, data)
+    data, _ = importData('summary_general.csv')
+    observationID: str = getObservationID(GRBName, data)
 
     # process the data using the HEASoft tools to generate light curves for the specified energy range and time bin size
     print(f"Processing data for {GRBName}...")
@@ -60,7 +54,7 @@ def processSwiftBATData(
     # delete the original data file if specified
     if deleteOriginal:
         print(f"Deleting original data file for {GRBName}...")
-        shutil.rmtree(f'data/reproc/{observationID}')
+        rmtree(f'data/reproc/{observationID}')
         print("Deletion complete.")
 
 if __name__ == "__main__":
@@ -68,6 +62,6 @@ if __name__ == "__main__":
     processSwiftBATData(
         GRBName = grbName,
         energyRange = "15-350",
-        download = True,
+        download = False,
         deleteOriginal = False,
         )

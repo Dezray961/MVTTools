@@ -1,10 +1,5 @@
-"""
-test of the heasoft python tools
-"""
-
-import sys
-import os
-import heasoftpy as hsp
+from os import system, environ, getcwd, listdir, path as osPath
+from heasoftpy import Config, fkeyprint, bateconvert, batmaskwtevt, batbinevt, fdump
 from contextlib import chdir
 from swiftDataTools.swiftBATCatalogueGRB import getObservationID, importData, getCoordinates, getStartStopTime
 from pathlib import Path
@@ -12,18 +7,34 @@ from shutil import move
 
 
 class ProcessSwiftData:
+    """Class to process Swift BAT data for a given GRB. This class handles the processing of Swift BAT data for a given GRB, including checking and applying gain correction, checking and applying mask weighting, extracting light curves for different time periods, and converting the light curve data into CSV files. It has the ability to process a custom time range, however this will require the user to call methods from outside the class."""
     def __init__(
             self,
             GRBName: str,
             energyBins: str = "15-350"
             )-> None:
+        """Constructor for `ProcessSwiftData` class. Runs a complete pipeline to convert data from Swift BAT raw data to a standardised CSV file. Requires the data to exist in `/data/reproc/{observationID}/bat/`
+
+        Args:
+            GRBName (str): Name of the GRB to process
+            energyBins (str, optional): Range of energy bins to use. Should be a string in the format "min-max", with the units in keV. Defaults to "15-350" This is the maximum energy range of the BAT sensor, see the BAT Data Analysis Guide for more information. https://swift.gsfc.nasa.gov/analysis/bat_swguide_v6_3.pdf
+
+        Raises:
+            EnvironmentError: if the HEADAS environment variable is not set. This is required for the HEASoft tools to function properly. The user should ensure that they have initialized HEASoft before running this code.
+            FileNotFoundError: if the required data files are not found in the specified directory.
+            ValueError: if the provided GRB name is invalid or not found in the dataset.
+            ValueError: if the provided energy bins are invalid or not supported.
+
+        Returns:
+            None: Output is saved to a CSV file in the `data/processed/{GRBName}` directory.
+        """
     # Check if the HEADAS environment variable is set. If it is not set, print an error message and exit the program. This is important because the HEASoft tools require the HEADAS environment variable to be set in order to function properly. If the variable is not set, the program will not be able to find the necessary tools and will fail to run. By checking for the variable at the beginning of the program, we can ensure that the user is aware of the issue and can take steps to fix it before proceeding with the data processing.
-        self.__headasPath = os.environ.get("HEADAS")
+        self.__headasPath = environ.get("HEADAS")
         if self.__headasPath:
-            os.environ["PFILES"] = f"{os.environ['HOME']}/pfiles;{self.__headasPath}/syspfiles"
+            environ["PFILES"] = f"{environ['HOME']}/pfiles;{self.__headasPath}/syspfiles"
         else:
             raise EnvironmentError("Error: HEADAS environment variable not found. Did you initialize HEASoft?")
-        hsp.Config.allow_failure = False
+        Config.allow_failure = False
 
         self.GRBName = GRBName
         self.energyBins = energyBins
@@ -39,7 +50,7 @@ class ProcessSwiftData:
 
         # process the data using the HEASoft tools
         with chdir(f"data/reproc/{self.__triggerID}/bat/event"):
-            print(os.getcwd())
+            print(getcwd())
             print(f"Processing data for {GRBName}...")
             self.__eventFilename: str = f"sw{self.__triggerID}bevshsp_uf.evt.gz"
             
@@ -67,7 +78,7 @@ class ProcessSwiftData:
             print("Data processing complete.")
             # move the light curve CSV files to the processed data directory
             # find the directory contents
-            dirContents: list[str] = os.listdir(os.getcwd())
+            dirContents: list[str] = listdir(getcwd())
         print("Tidying up the directory...")
         for file in dirContents:
             inFilePath: str = f"data/reproc/{self.__triggerID}/bat/event/{file}"
@@ -92,7 +103,7 @@ class ProcessSwiftData:
             filename (str): The name of the file to be unzipped. This should be the name of the file that has been compressed using gzip.
         """
         print("Unzipping file: ", filename)
-        os.system(f"gunzip {filename}")
+        system(f"gunzip {filename}")
 
 
     def zipFile(
@@ -105,7 +116,7 @@ class ProcessSwiftData:
             filename (str): The name of the file to be zipped. This should be the name of the file that is to be compressed using gzip.
         """
         print("Zipping file: ", filename)
-        os.system(f"gzip {filename} -v")
+        system(f"gzip {filename} -v")
 
 
     def checkGain(
@@ -120,7 +131,7 @@ class ProcessSwiftData:
             bool: True if the gain correction has been applied, False if the gain correction has not been applied
         """
         print("Checking gain correction")
-        output = hsp.fkeyprint(
+        output = fkeyprint(
             infile = self.__eventFilename,
             keynam = "GAIN"
             )
@@ -161,7 +172,7 @@ class ProcessSwiftData:
         print("Applying gain correction to file: ", self.__eventFilename)
         # find the calibration file in the hk directory. 
         self.__calibrationFile: str = f"../hk/{self.__eventFilename.replace('bevshsp_uf.evt.gz', 'bcbo01deg00ab.fits.gz')}"
-        if not os.path.exists(self.__calibrationFile):
+        if not osPath.exists(self.__calibrationFile):
             ### download the calibration file - impliment this later
             raise FileNotFoundError(f"Calibration file not found: {self.__calibrationFile}")
 
@@ -172,7 +183,7 @@ class ProcessSwiftData:
             self.__eventFilename = self.__eventFilename.replace(".gz", "")
 
         # run the bateconvert command to correct the gain. 
-        output: hsp.BateconvertOutput = hsp.bateconvert(
+        output = bateconvert(
             infile = self.__eventFilename,
             calfile = self.__calibrationFile,
             residfile = "CALDB",
@@ -205,7 +216,7 @@ class ProcessSwiftData:
                 bool: True if the mask has been applied, False if the mask has not been applied
             """
             print("Checking mask weighting")
-            output = hsp.fkeyprint(
+            output = fkeyprint(
                 infile = self.__eventFilename,
                 keynam = "BAT_"
             )
@@ -239,13 +250,13 @@ class ProcessSwiftData:
             """Checks the `batmaskwtevt` version that has been applied to the data. Uses the output from `fkeyprint` to check the MASKVER keyword in the event file header.
 
             Args:
-                output (hsp.FKeyPrintOutput): _description_
+                output (FKeyPrintOutput): _description_
 
             Returns:
                 bool: _description_
             """
             print("Checking batmaskwtevt version")
-            output = hsp.fkeyprint(
+            output = fkeyprint(
                 infile = self.__eventFilename,
                 keynam = "BATCREAT"
             )
@@ -285,13 +296,13 @@ class ProcessSwiftData:
 
         # find the attitude file in the aux directory.
         self.__attitudeFile: str = f"../aux/{self.__eventFilename.replace('bevshsp_uf.evt.gz', 'sat.fits.gz')}"
-        if not os.path.exists(self.__attitudeFile):
+        if not osPath.exists(self.__attitudeFile):
             ### download the attitude file - impliment this later
             raise FileNotFoundError(f"Attitude file not found: {self.__attitudeFile}")
             
         # find the quality map file in the hk directory.
         self.__qualityMapFile: str = f"../hk/{self.__eventFilename.replace('bevshsp_uf.evt.gz', 'bdqcb.hk.gz')}"
-        if not os.path.exists(self.__qualityMapFile):
+        if not osPath.exists(self.__qualityMapFile):
             ### download the quality map file - impliment this later
             raise FileNotFoundError(f"Quality map file not found: {self.__qualityMapFile}")
 
@@ -304,7 +315,7 @@ class ProcessSwiftData:
         self.__rightAscension, self.__declination = getCoordinates(self.__triggerID, self.__data)
 
         # run the batmaskwtevt command to apply the mask.
-        output: hsp.BatmaskwtevtOutput = hsp.batmaskwtevt(
+        output = batmaskwtevt(
             infile = self.__eventFilename,
             attitude = self.__attitudeFile,
             ra = self.__rightAscension,
@@ -364,7 +375,7 @@ class ProcessSwiftData:
                 raise ValueError("Invalid period. Must be 0 (pre-burst), 1 (burst), 2 (post-burst), or 3 (custom).")
         
         # run batbinevt to create the light curve (uniform bins)
-        output: hsp.BatbinevtOutput = hsp.batbinevt(
+        output = batbinevt(
             infile = self.__eventFilename,
             outfile = fileName,
             outtype = "LC",
@@ -383,7 +394,14 @@ class ProcessSwiftData:
             self,
             period: int
             ) -> None:
+        """Converts the light curve data to a CSV file using `fdump`. The light curve data is extracted from the event file and saved to a CSV file in the `data/processed/{GRBName}` directory. The CSV file contains the time, rate, and error columns for the light curve data.
 
+        Args:
+            period (int): Time period to convert the light curve data for. 0 = pre-burst, 1 = burst, 2 = post-burst, 3 = custom.
+
+        Raises:
+            ValueError: If the period is not 0, 1, 2, or 3.
+        """
 
         # determine parameters for writing the light curve data to a CSV file based on the period
         match period:
@@ -407,7 +425,7 @@ class ProcessSwiftData:
                 raise ValueError("Invalid period. Must be 0 (pre-burst), 1 (burst), 2 (post-burst), or 3 (custom).")
 
         # use fdump to convert the light curve data into a text file
-        output: hsp.FdumpOutput = hsp.fdump(
+        output = fdump(
             infile = inFileName,
             outfile = outFileName,
             prhead = "no",

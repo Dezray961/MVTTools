@@ -55,20 +55,26 @@ class ProcessSwiftData:
             self.__eventFilename: str = f"sw{self.__triggerID}bevshsp_uf.evt.gz"
             
             # check if the gain correction has been applied to the event file.
-            if not self.checkGain():
+            if not self.__checkGain():
                 # correct the gain if it has not been applied.
-                self.correctGain()
+                self.__correctGain()
             
             # check if the mask has been applied to the event file. 
-            if not self.checkMask():
+            if not self.__checkMask():
                 # apply the mask if it has not been applied.
-                self.applyMask()
+                self.__applyMask()
 
             # get the start and stop times of the burst from the summary_general.csv file.
             self.__startTime, self.__stopTime, _ = getStartStopTime(
                 self.GRBName,
                 self.__data
             )
+
+            # find the burst duration
+            self.__burstDuration: float = self.__stopTime - self.__startTime
+            print(f"Start time: {self.__startTime} seconds")
+            print(f"Stop time: {self.__stopTime} seconds")
+            print(f"Burst duration: {self.__burstDuration} seconds")
 
             # extract the light curves
             for period in range(2):
@@ -93,7 +99,7 @@ class ProcessSwiftData:
         print("Tidying up complete. Light curve CSV files moved to processed data directory.")
 
 
-    def unzipFile(
+    def __unzipFile(
             self,
             filename: str
         )-> None:
@@ -106,7 +112,7 @@ class ProcessSwiftData:
         system(f"gunzip {filename}")
 
 
-    def zipFile(
+    def __zipFile(
             self,
             filename: str
         )-> None:
@@ -119,7 +125,7 @@ class ProcessSwiftData:
         system(f"gzip {filename} -v")
 
 
-    def checkGain(
+    def __checkGain(
             self
         )-> bool:
         """Checks the gain has been applied to BAT data. Uses `fkeyprint` to check the GAINAPP and GAINMETH keywords in the event file header.
@@ -154,7 +160,7 @@ class ProcessSwiftData:
         return all(bools)
 
 
-    def correctGain(
+    def __correctGain(
             self
         )-> None:
         """Corrects the gain of BAT data.
@@ -179,7 +185,7 @@ class ProcessSwiftData:
 
         # unzip the file if it is compressed. Needed for the bateconvert command to work. 
         if self.__eventFilename.endswith(".gz"):
-            self.unzipFile(self.__eventFilename)
+            self.__unzipFile(self.__eventFilename)
             self.__eventFilename = self.__eventFilename.replace(".gz", "")
 
         # run the bateconvert command to correct the gain. 
@@ -196,11 +202,11 @@ class ProcessSwiftData:
 
 
         # zip the file back up
-        self.zipFile(self.__eventFilename)
+        self.__zipFile(self.__eventFilename)
         self.__eventFilename = self.__eventFilename + ".gz"
 
 
-    def checkMask(
+    def __checkMask(
             self
         )-> bool:
         
@@ -283,7 +289,7 @@ class ProcessSwiftData:
         return all(bools)
 
 
-    def applyMask(
+    def __applyMask(
             self
         )-> None:
         """Applies the mask to BAT data. Uses `batmaskwtevt` to apply the mask to the event file.
@@ -308,7 +314,7 @@ class ProcessSwiftData:
 
         # unzip the file if it is compressed. Needed for the batmaskwtevt command to work. 
         if self.__eventFilename.endswith(".gz"):
-            self.unzipFile(self.__eventFilename)
+            self.__unzipFile(self.__eventFilename)
             self.__eventFilename = self.__eventFilename.replace(".gz", "")
 
         # find the right ascension and declination of the GRB from the summary_general.csv file.
@@ -329,7 +335,7 @@ class ProcessSwiftData:
         print(output.stdout)
 
         # zip the file back up
-        self.zipFile(self.__eventFilename)
+        self.__zipFile(self.__eventFilename)
         self.__eventFilename = self.__eventFilename + ".gz"
 
 
@@ -351,7 +357,7 @@ class ProcessSwiftData:
         match period:
             case 0: # pre-burst
                 fileName: str = "outputPreBurst.lc"
-                startTime: float = self.__startTime - 30
+                startTime: float = self.__startTime - self.__burstDuration
                 stopTime: float = self.__startTime
                 print("Extracting pre-burst uniform light curve")
             case 1: # burst
@@ -362,7 +368,7 @@ class ProcessSwiftData:
             case 2: # post-burst
                 fileName: str = "outputPostBurst.lc"
                 startTime: float = self.__stopTime
-                stopTime: float = self.__stopTime + 30
+                stopTime: float = self.__stopTime + self.__burstDuration
                 print("Extracting post-burst uniform light curve")
             case 3: # custom
                 if customTimeRange is None:
@@ -385,7 +391,8 @@ class ProcessSwiftData:
             detmask = f"../hk/sw{self.__triggerID}bdqcb.hk.gz",
             tstart = startTime,
             tstop = stopTime,
-            clobber = "YES"
+            clobber = "YES",
+            outunits = "RATE"
         )
         print(output.stdout)
 
@@ -457,6 +464,7 @@ class ProcessSwiftData:
                 line = ','.join(line) + '\n'
                 tempLines.append(line)
         lines = tempLines
+        lines[0] = lines[0].lower()
 
         # write the cleaned lines back to the CSV file
         with open(outFileName, 'w') as f:

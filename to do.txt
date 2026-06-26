@@ -1,5 +1,5 @@
-Adapt the swiftDataTools to output a uniform time series
-    Most of this is already done, I think it just needs the correct argument
+Adapt the swiftDataTools to output a uniform time series                        ✅
+    Most of this is already done, I think it just needs the correct argument    ✅
 Adapt importLightCurve.py to work with the new pipline
     this should be pretty much done?
 Make a script that can denoise a dataset.
@@ -9,7 +9,7 @@ Make a script that can denoise a dataset.
 Make a script that can re-bin the data into constant S/N = 5 bins
     Look at how Golkhou's code does this
 Make a script that writes the denoised, rebinned data to CSV
-    Obvious - overwrite the old data as it isn't needed (might be worth not rewriting while testing)
+    Obvious - overwrite the old data as it isn't needed (not while testing)
 Make or adapt old script that can find the undecimated Haar Wavelet transform
     Try PyWavelets?
 Make a script that can:
@@ -45,4 +45,4 @@ Set up something that can do a rolling window of data
     This will allow me to plot the MVT as a function of time
 
 
- ✅
+✅

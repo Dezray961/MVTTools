@@ -1,6 +1,7 @@
-import pywt
 import numpy as np
 from analysisTools.importLightCurve import LightCurveData
+from analysisTools.pyramidsDWTs import MODWT, inverseMODWT
+
 
 
 def haarDenoise(
@@ -32,59 +33,73 @@ def haarDenoise(
             float: threshold for the given level
         """
         n_l: int = 2 ** (maxLevel - level)
-        prefactor: float = (2 ** (-0.5 * (level + 2)))
+        prefactor: float = 2 ** (-0.5 * (level + 2))
         firstLogTerm: float = np.log(n_l)
-        secondLogTerm: float = np.max([np.log(n_l * meanRate), 0])
-        thresholdValue: float = prefactor * (2 * firstLogTerm + (((4 * firstLogTerm) ** 2) + (8 * secondLogTerm)) ** 0.5)
+        secondLogTerm: float = np.log(n_l * meanRate)
+        sqrtTerm: float = max((((4 * firstLogTerm) ** 2) + (8 * secondLogTerm)), 0)
+        thresholdValue: float = prefactor * (2 * firstLogTerm + sqrtTerm ** 0.5)
         return thresholdValue
-    
+
+
+    def findPoissonRate(
+            data: LightCurveData,
+            binSize: int
+            ) -> float:
+        """Finds the mean rate of the pre-burst data for a given bin size.
+
+        Args:
+            data (LightCurveData): light curve data
+            binSize (int): size of the bins in indices.
+
+        Returns:
+            float: mean rate of the pre-burst data
+        """
+        preBurstCounts: np.ndarray = data.burstData['totcounts'].to_numpy()
+        timeInBin: float = 100e-6 * binSize
+        countsInBin: np.ndarray = np.zeros(len(preBurstCounts) - binSize)
+        for i in range(len(preBurstCounts) - binSize):
+            countsInBin[i] = np.sum(preBurstCounts[i:i + binSize])
+        meanRate: float = np.mean(countsInBin) / timeInBin
+        return meanRate
+
+
 
     burstData: list[float] = data.burstData['rate'].to_list()
     burstError: list[float] = data.burstData['error'].to_list()
 
-    # find the mean rate of the pre-burst data
-    maxLevel: int = int(np.floor(np.log2(len(burstData))))
-    # find the wavelet coefficients of the pre-burst data. This produces a (J - L + 1) x N matrix
-    # this does not need to be the translation invariant wavelet transform, so it uses the DWT from pywavelets
+    maxLevel: int = int(np.floor(np.log2(len(burstData)))) - 1
 
-    haarTransformCoefficients: np.ndarray = pywt.wavedec(
-        burstData,
-        'haar',
-        mode = 'zero'
-        )
+    # get the Haar wavelet coefficients and scaling coefficients using the MODWT
+    waveletCoeffs, scalingCoeffs = MODWT(burstData)
 
-    # find L - this may be used later, currently the wavelet transform is done over the whole space
-    L: int = len(haarTransformCoefficients) - maxLevel - 1
-    # find the threshold for each level of the wavelet transform
-    print(haarTransformCoefficients[2][2])
-    for level in range(1, maxLevel - L):
-        meanRate: float = np.abs(haarTransformCoefficients[level][0] / ((2 ** level) * 100e-6))
-        thresholdValue: float = threshold(
-            level,
-            maxLevel,
-            meanRate
-            )
-        for i, coefficient in enumerate(haarTransformCoefficients[level][1:]):
-            if thresholdMethod == "soft":
-                if np.abs(coefficient) < 3 * thresholdValue:
-                    haarTransformCoefficients[level][i + 1] = 0
+    # apply thresholding to the wavelet coefficients
+    for level in range(maxLevel):
+        # calculate the threshold for the current level
+        meanRate: float = findPoissonRate(data, 2 ** level)
+        thresholdValue: float = threshold(level, maxLevel, meanRate)
+
+        # apply the thresholding to the level's wavelet coefficients
+        if thresholdMethod == "soft":
+            for i in range(len(waveletCoeffs[level])):
+                if abs(waveletCoeffs[level][i]) < thresholdValue:
+                    waveletCoeffs[level][i] = 0
                 else:
-                    haarTransformCoefficients[level][i + 1] = np.sign(coefficient) * (np.abs(coefficient) - 3 * thresholdValue)
-            elif thresholdMethod == "hard":
-                if np.abs(coefficient) < thresholdValue:
-                    haarTransformCoefficients[level][i + 1] = 0
-            else:
-                raise ValueError(f"Invalid thresholding method: {thresholdMethod}. Must be 'soft' or 'hard'.")
-    print(haarTransformCoefficients[2][2])
-    # inverse wavelet transform to get the denoised data
-    denoisedData: np.ndarray = pywt.waverec(
-        haarTransformCoefficients,
-        'haar',
-        mode = 'zero'
+                    waveletCoeffs[level][i] = np.sign(waveletCoeffs[level][i]) * (abs(waveletCoeffs[level][i]) - thresholdValue)
+        elif thresholdMethod == "hard":
+            for i in range(len(waveletCoeffs[level])):
+                if abs(waveletCoeffs[level][i]) < thresholdValue:
+                    waveletCoeffs[level][i] = 0
+        else:
+            raise ValueError(f"Invalid threshold method: {thresholdMethod}. Must be 'soft' or 'hard'.")
+
+
+    # invert the transform to get the denoised data
+    denoisedData: np.ndarray = inverseMODWT(
+        waveletCoeffs,
+        scalingCoeffs
         )
+    data.burstData['denoisedRate'] = denoisedData
 
-
-    data.burstData['denoisedRate'] = denoisedData[:len(data.burstData)]
 
     return data
 
@@ -109,7 +124,8 @@ def plotlightCurve(
         data.burstData['time'],
         data.burstData['denoisedRate'],
         label='Denoised Data',
-        color='red'
+        color='red',
+        alpha=0.5
         )
     plt.xlabel('Time (s)')
     plt.ylabel('Rate (counts/s)')
@@ -117,23 +133,15 @@ def plotlightCurve(
     plt.show()
 
 
+def getData():
+    return LightCurveData("GRB080319B")
 
 
+data = getData()
+haarDenoise(data)
+plotlightCurve(data)
 
-#    # pad the data to the next power of 2
-#    n: int = int(np.ceil(np.log2(len(data))))
-#    nextPowerOf2: int = int(2 ** n)
-#    padSize: int = (nextPowerOf2 - len(data)) // 2
-#    paddedData: np.ndarray = np.pad(data, (padSize, padSize), mode='constant')
-#    # check the length of the padded data is the correct length
-#    difference: int = len(paddedData) - nextPowerOf2
-#    match difference:
-#        case _ if difference < 0:
-#            # pad the data to the next power of 2
-#            paddedData: np.ndarray = np.pad(paddedData, (0, -difference), mode='constant')
-#        case _ if difference > 0:
-#            # truncate the data to the next power of 2
-#            paddedData: np.ndarray = paddedData[:nextPowerOf2]
+
 #    
 #    
 #

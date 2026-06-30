@@ -1,7 +1,5 @@
 Adapt the swiftDataTools to output a uniform time series                        ✅
-    Most of this is already done, I think it just needs the correct argument    ✅
-Adapt importLightCurve.py to work with the new pipline
-    this should be pretty much done?
+Adapt importLightCurve.py to work with the new pipline                          ✅
 Make a script that can denoise a dataset.
     Try PyWavelets' threshold()
     If that doesn't work then KOLACZYK 1997 has a method.

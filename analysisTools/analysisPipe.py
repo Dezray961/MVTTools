@@ -8,9 +8,10 @@
 
 from analysisTools.importLightCurve import LightCurveData
 from analysisTools.haarDenoise import haarDenoise
+from analysisTools.rebinLightCurve import rebinLightCurve
 
 
-def analsysPipe(
+def analysisPipe(
         GRBName: str,
         energyRange: str = "15-350"
     ) -> None:
@@ -23,7 +24,7 @@ def analsysPipe(
     # denoise the light curve data using the Haar wavelet transform
     haarDenoise(data)
     # rebin the light curve data to a constant SNR
-
+    rebinLightCurve(data, instrument = "swiftBAT", snrThreshold = 5.0)
     # window the light curve data to a specific time range
 
     # find the undecimated Haar transform of each window
@@ -35,7 +36,7 @@ def analsysPipe(
 
 if __name__ == "__main__":
     grbName: str = "GRB080319B"
-    analsysPipe(
+    analysisPipe(
         GRBName = grbName,
         energyRange = "15-350"
         )

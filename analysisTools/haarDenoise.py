@@ -8,7 +8,8 @@ from tqdm import tqdm
 def haarDenoise(
         data: LightCurveData,
         thresholdMethod: str = "soft",
-        backgroundNoiseModel: str = "poisson"
+        backgroundNoiseModel: str = "poisson",
+        thresholdScaleFactor: float = 0.5
         ) -> None:
     """Denoises the light curve data using the Haar wavelet transform and thresholding. The denoised data is added to the LightCurveData object as a new column.
 
@@ -16,6 +17,7 @@ def haarDenoise(
         data (LightCurveData): light curve data to denoise
         thresholdMethod (str, optional): thresholding method to use. Defaults to "soft". Options are "soft" and "hard". 
         backgroundNoiseModel (str, optional): background noise model to use. Defaults to "poisson". Options are "poisson" and "gaussian".
+        thresholdScaleFactor (float, optional): factor to scale the threshold value. Defaults to 0.5. The rationale for this is that any noise that is left in should be small enough to not affect the MVT calculation. Whereas, if the threshold is too high, the MVT calculation will be affected by the loss of signal. This is a trade-off between noise and signal loss.
 
     Returns:
         LightCurveData: light curve data with denoised data added as a new column
@@ -39,7 +41,7 @@ def haarDenoise(
         prefactor: float = 2 ** (-0.5 * (level + 2))
         firstLogTerm: float = log(n_l)
         secondLogTerm: float = log(n_l * meanRate)
-        sqrtTerm: float = max((((4 * firstLogTerm) ** 2) + (8 * secondLogTerm)), 0)
+        sqrtTerm: float = max((((4 * firstLogTerm) ** 2) + (8 * secondLogTerm)), 0) # max with 0 to avoid complex numbers
         thresholdValue: float = prefactor * (2 * firstLogTerm + sqrtTerm ** 0.5)
         return thresholdValue
 
@@ -59,7 +61,7 @@ def haarDenoise(
         """
         n_l: int = 2 ** (maxLevel - level)
         thresholdValue: float = sqrt(2 * log(n_l))
-        return thresholdValue
+        return thresholdValue            
 
 
     def findPoissonRate(
@@ -100,9 +102,11 @@ def haarDenoise(
         if backgroundNoiseModel == "poisson":
             thresholdValue: float = thresholdPoisson(level, maxLevel, meanRate)
         elif backgroundNoiseModel == "gaussian":
-            thresholdValue: float = thresholdGaussian(level, maxLevel, meanRate)
+            thresholdValue: float = thresholdGaussian(level, maxLevel)
         else:
             raise ValueError(f"Invalid background noise model: {backgroundNoiseModel}. Must be 'poisson' or 'gaussian'.")
+
+        thresholdValue *= thresholdScaleFactor # scaling factor to adjust the threshold value
 
         # apply the thresholding to the level's wavelet coefficients
         if thresholdMethod == "soft":

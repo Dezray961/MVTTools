@@ -29,9 +29,12 @@ class LightCurveData:
         self.name: str = GRBName
         self.__preBurstCSV: str = f"data/processed/{self.name}/{self.name}PreBurstLC.csv"
         self.__burstCSV: str = f"data/processed/{self.name}/{self.name}BurstLC.csv"
+        print("Importing the pre-burst light curve data...")
         self.preBurstData: DataFrame = self.__generateDataFrame(self.__preBurstCSV)
+        print("Importing the burst light curve data...")
         self.burstData: DataFrame = self.__generateDataFrame(self.__burstCSV)
         self.__truncateAtSlewPoint()
+        print("Data import complete.")
 
     def __generateDataFrame(
             self,

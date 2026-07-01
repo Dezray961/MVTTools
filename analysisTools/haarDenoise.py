@@ -1,6 +1,7 @@
-from numpy import ndarray, zeros, log, mean, floor, log2, sign
+from numpy import ndarray, zeros, log, mean, floor, log2, sign, cumsum
 from analysisTools.importLightCurve import LightCurveData
 from analysisTools.pyramidsDWTs import MODWT, inverseMODWT
+from tqdm import tqdm
 
 
 
@@ -56,9 +57,9 @@ def haarDenoise(
         """
         preBurstCounts: ndarray = data.burstData['totcounts'].to_numpy()
         timeInBin: float = 100e-6 * binSize
-        countsInBin: ndarray = zeros(len(preBurstCounts) - binSize)
-        for i in range(len(preBurstCounts) - binSize):
-            countsInBin[i] = sum(preBurstCounts[i:i + binSize])
+        # moving window sum
+        cumulativeCounts: ndarray = cumsum(preBurstCounts)
+        countsInBin: ndarray = cumulativeCounts[binSize:] - cumulativeCounts[:-binSize]
         meanRate: float = mean(countsInBin) / timeInBin
         return meanRate
 
@@ -70,10 +71,12 @@ def haarDenoise(
     maxLevel: int = int(floor(log2(len(burstData)))) - 1
 
     # get the Haar wavelet coefficients and scaling coefficients using the MODWT
+    print("Performing MODWT on the burst data...")
     waveletCoeffs, scalingCoeffs = MODWT(burstData)
+    print("MODWT complete.")
 
     # apply thresholding to the wavelet coefficients
-    for level in range(maxLevel):
+    for level in tqdm(range(maxLevel), desc="Thresholding wavelet coefficients", unit="level"):
         # calculate the threshold for the current level
         meanRate: float = findPoissonRate(data, 2 ** level)
         thresholdValue: float = threshold(level, maxLevel, meanRate)
@@ -93,6 +96,35 @@ def haarDenoise(
             raise ValueError(f"Invalid threshold method: {thresholdMethod}. Must be 'soft' or 'hard'.")
 
 
+
+
+
+
+
+
+
+#    # apply thresholding to the wavelet coefficients
+#    for level in range(maxLevel):
+#        # calculate the threshold for the current level
+#        meanRate: float = findPoissonRate(data, 2 ** level)
+#        thresholdValue: float = threshold(level, maxLevel, meanRate)
+#
+#        # apply the thresholding to the level's wavelet coefficients
+#        if thresholdMethod == "soft":
+#            for i in range(len(waveletCoeffs[level])):
+#                if abs(waveletCoeffs[level][i]) < thresholdValue:
+#                    waveletCoeffs[level][i] = 0
+#                else:
+#                    waveletCoeffs[level][i] = sign(waveletCoeffs[level][i]) * (abs(waveletCoeffs[level][i]) - thresholdValue)
+#        elif thresholdMethod == "hard":
+#            for i in range(len(waveletCoeffs[level])):
+#                if abs(waveletCoeffs[level][i]) < thresholdValue:
+#                    waveletCoeffs[level][i] = 0
+#        else:
+#            raise ValueError(f"Invalid threshold method: {thresholdMethod}. Must be 'soft' or 'hard'.")
+    print("Thresholding complete.")
+
+    print("Inverting the transform to get the denoised data...")
     # invert the transform to get the denoised data
     denoisedData: ndarray = inverseMODWT(
         waveletCoeffs,

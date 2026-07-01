@@ -1,9 +1,9 @@
 Adapt the swiftDataTools to output a uniform time series                        ✅
 Adapt importLightCurve.py to work with the new pipline                          ✅
-Make a script that can denoise a dataset.
-    Try PyWavelets' threshold()
-    If that doesn't work then KOLACZYK 1997 has a method.
-        According to this it is better to use a soft threshold
+Make a script that can denoise a dataset.                                       ✅
+    Try PyWavelets' threshold()                                                 ✅
+    If that doesn't work then KOLACZYK 1997 has a method.                       ✅
+        According to this it is better to use a soft threshold                  ✅
 Make a script that can re-bin the data into constant S/N = 5 bins
     Look at how Golkhou's code does this
 Make a script that writes the denoised, rebinned data to CSV

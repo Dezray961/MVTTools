@@ -6,14 +6,17 @@ from `cFiles/pyramidDWTs.cpp` and converts NumPy arrays to the flattened output 
 the C++ API.
 """
 
-import ctypes
+from ctypes import CDLL, c_int
 from pathlib import Path
-import os
-
-import numpy as np
+from os import system
+from numpy import ndarray, ctypeslib, float64, ascontiguousarray, asarray, zeros, floor, log2
 
 class PyramidDWTs:
-    
+    """
+    Class to wrap the pyramidDWTs C++ library for MODWT and inverse MODWT operations.
+    This class provides methods to perform the MODWT decomposition and inverse reconstruction
+    using the Haar and Daubechies 2 wavelet filters. It handles the conversion between NumPy arrays and the C++ API, and manages the shared library loading and function signatures.
+    """
     def __init__(
             self,
             libraryPath: str | Path | None = None
@@ -24,7 +27,7 @@ class PyramidDWTs:
             libraryPath (str | Path | None, optional): Path to shared object library. Defaults to None.
         """
         self.libraryPath = self.__resolveLibraryPath(libraryPath)
-        self.lib = ctypes.CDLL(str(self.libraryPath))
+        self.lib = CDLL(str(self.libraryPath))
         self.__configureSignatures()
 
 
@@ -54,7 +57,7 @@ class PyramidDWTs:
                 return candidate
         # g++ -std=c++20 -openmp -shared -fPIC pyramidDWTs.cpp -o pyramidDWTs.so
         # If we reach this point, no valid library was found so compile the C++ code into a shared library
-        os.system(f"g++ -std=c++20 -openmp -shared -fPIC {module_dir.parent / 'cFiles' / 'pyramidDWTs.cpp'} -o {candidates[0]}")
+        system(f"g++ -std=c++20 -openmp -shared -fPIC {module_dir.parent / 'cFiles' / 'pyramidDWTs.cpp'} -o {candidates[0]}")
         return candidates[0]
 
     
@@ -64,69 +67,69 @@ class PyramidDWTs:
         """Configures the argument and return types for the C++ functions."""
         # configure the argument and return types for the pyramidDWTs function MODWTTransform
         self.lib.MODWTTransform.argtypes = [
-            np.ctypeslib.ndpointer(
-                dtype = np.float64,
+            ctypeslib.ndpointer(
+                dtype = float64,
                 ndim = 1,
                 flags = "C_CONTIGUOUS"
             ), # signal
-            ctypes.c_int, # signalLength
-            ctypes.c_int, # transformType
-            np.ctypeslib.ndpointer(
-                dtype = np.float64,
+            c_int, # signalLength
+            c_int, # transformType
+            ctypeslib.ndpointer(
+                dtype = float64,
                 ndim = 1,
                 flags = "C_CONTIGUOUS"
             ), # output
-            np.ctypeslib.ndpointer(
-                dtype = np.float64,
+            ctypeslib.ndpointer(
+                dtype = float64,
                 ndim = 1,
                 flags = "C_CONTIGUOUS"
             ), # scalingCoeffs
         ]
         # configure the return type for the pyramidDWTs function MODWTTransform
-        self.lib.MODWTTransform.restype = ctypes.c_int # exit status
+        self.lib.MODWTTransform.restype = c_int # exit status
 
         # configure the argument and return types for the pyramidDWTs function MODWTInverseTransform
         self.lib.MODWTInverseTransform.argtypes = [
-            np.ctypeslib.ndpointer(
-                dtype = np.float64,
+            ctypeslib.ndpointer(
+                dtype = float64,
                 ndim = 1,
                 flags = "C_CONTIGUOUS"
             ), # waveletCoeffs
-            ctypes.c_int, # waveletCoeffsLength
-            ctypes.c_int, # waveletLevels
-            np.ctypeslib.ndpointer(
-                dtype = np.float64,
+            c_int, # waveletCoeffsLength
+            c_int, # waveletLevels
+            ctypeslib.ndpointer(
+                dtype = float64,
                 ndim = 1,
                 flags = "C_CONTIGUOUS"
             ), # scalingCoeffs
-            ctypes.c_int, # transformType
-            np.ctypeslib.ndpointer(
-                dtype = np.float64,
+            c_int, # transformType
+            ctypeslib.ndpointer(
+                dtype = float64,
                 ndim = 1,
                 flags = "C_CONTIGUOUS"
             ), # output
         ]
         # configure the return type for the pyramidDWTs function MODWTInverseTransform
-        self.lib.MODWTInverseTransform.restype = ctypes.c_int # exit status
+        self.lib.MODWTInverseTransform.restype = c_int # exit status
 
 
     @staticmethod
     def __asDoubleArray(
-        values: np.ndarray | list[float]
-        ) -> np.ndarray:
+        values: ndarray | list[float]
+        ) -> ndarray:
         """Converts an iterable of floats to a contiguous NumPy array of type float64."""
-        return np.ascontiguousarray(np.asarray(values, dtype=np.float64))
+        return ascontiguousarray(asarray(values, dtype=float64))
 
 
     def MODWT(
         self,
-        signal: np.ndarray | list[float],
+        signal: ndarray | list[float],
         transformType: str
-        ) -> tuple[np.ndarray, np.ndarray]:
+        ) -> tuple[ndarray, ndarray]:
         """Performs the MODWT decomposition using the provided wavelet filters and returns the wavelet and scaling coefficients.
 
         Args:
-            signal (np.ndarray | list[float]): The input signal to be decomposed.
+            signal (ndarray | list[float]): The input signal to be decomposed.
             transformType (str): The type of transform to perform. "haar" for Haar, "db2" for Daubechies 2.
         
         Raises:
@@ -134,10 +137,10 @@ class PyramidDWTs:
             RuntimeError: If the MODWT decomposition fails.
         
         Returns:
-            tuple[np.ndarray, np.ndarray]: The wavelet coefficient pyramid with shape
+            tuple[ndarray, ndarray]: The wavelet coefficient pyramid with shape
             (jMax + 1, signalLength) and the final scaling coefficients.
         """
-        signalArray: np.ndarray = self.__asDoubleArray(signal)
+        signalArray: ndarray = self.__asDoubleArray(signal)
         signalLength: int = signalArray.size
 
         # get the integer code for the transform type
@@ -149,11 +152,11 @@ class PyramidDWTs:
             case _:
                 raise ValueError(f"Invalid transform type: {transformType}. Must be 'haar' or 'db2'.")
 
-        waveletLevels: int = max(int(np.floor(np.log2(signalLength))) - 1, 0)
+        waveletLevels: int = max(int(floor(log2(signalLength))) - 1, 0)
 
         # prepare the output arrays
-        waveletCoeffs: np.ndarray = np.zeros(waveletLevels * signalLength, dtype=np.float64)
-        scalingCoeffs: np.ndarray = np.zeros(signalLength, dtype=np.float64)
+        waveletCoeffs: ndarray = zeros(waveletLevels * signalLength, dtype=float64)
+        scalingCoeffs: ndarray = zeros(signalLength, dtype=float64)
 
         # call the C++ function
         status: int = self.lib.MODWTTransform(
@@ -173,15 +176,15 @@ class PyramidDWTs:
 
     def inverseMODWT(
         self,
-        transformCoefficients: np.ndarray | list[float],
-        scalingCoefficients: np.ndarray | list[float],
+        transformCoefficients: ndarray | list[float],
+        scalingCoefficients: ndarray | list[float],
         transformType: str
-        ) -> np.ndarray:
+        ) -> ndarray:
         """Performs the inverse MODWT reconstruction using the provided wavelet and scaling coefficients.
         
         Args:
-            transformCoefficients (np.ndarray | list[float]): The wavelet coefficients from the MODWT decomposition.
-            scalingCoefficients (np.ndarray | list[float]): The scaling coefficients from the MODWT decomposition.
+            transformCoefficients (ndarray | list[float]): The wavelet coefficients from the MODWT decomposition.
+            scalingCoefficients (ndarray | list[float]): The scaling coefficients from the MODWT decomposition.
             transformType (str): The type of transform to perform. "haar" for Haar, "db2" for Daubechies 2.
         
         Raises:
@@ -189,19 +192,19 @@ class PyramidDWTs:
             RuntimeError: If the inverse MODWT reconstruction fails.
 
         Returns:
-            np.ndarray: The reconstructed signal.
+            ndarray: The reconstructed signal.
         """
-        transformCoeffsArray: np.ndarray = np.asarray(transformCoefficients, dtype=np.float64)
+        transformCoeffsArray: ndarray = asarray(transformCoefficients, dtype=float64)
         if transformCoeffsArray.ndim == 2:
             waveletLevels: int = transformCoeffsArray.shape[0]
-            transformCoeffsArray = np.ascontiguousarray(transformCoeffsArray.reshape(-1))
+            transformCoeffsArray = ascontiguousarray(transformCoeffsArray.reshape(-1))
         elif transformCoeffsArray.ndim == 1:
             waveletLevels = 1
-            transformCoeffsArray = np.ascontiguousarray(transformCoeffsArray)
+            transformCoeffsArray = ascontiguousarray(transformCoeffsArray)
         else:
             raise ValueError("transformCoefficients must be a 1D or 2D array-like object.")
 
-        scalingCoeffsArray: np.ndarray = self.__asDoubleArray(scalingCoefficients)
+        scalingCoeffsArray: ndarray = self.__asDoubleArray(scalingCoefficients)
         transformCoeffsLength: int = transformCoeffsArray.size
         signalLength: int = transformCoeffsLength // waveletLevels
 
@@ -215,7 +218,7 @@ class PyramidDWTs:
                 raise ValueError(f"Invalid transform type: {transformType}. Must be 'haar' or 'db2'.")
         
         # prepare the output array
-        output: np.ndarray = np.zeros(signalLength, dtype=np.float64)
+        output: ndarray = zeros(signalLength, dtype=float64)
 
         # call the C++ function
         status: int = self.lib.MODWTInverseTransform(
@@ -235,13 +238,13 @@ class PyramidDWTs:
 
 
 def MODWT(
-    signal: np.ndarray | list[float],
+    signal: ndarray | list[float],
     transformType: str = "haar"
-    ) -> tuple[np.ndarray, np.ndarray]:
+    ) -> tuple[ndarray, ndarray]:
     """Performs the MODWT decomposition using the provided wavelet filters and returns the wavelet and scaling coefficients.
 
     Args:
-        signal (np.ndarray | list[float]): The input signal to be decomposed.
+        signal (ndarray | list[float]): The input signal to be decomposed.
         transformType (str, optional): The type of transform to perform. "haar" for Haar, "db2" for Daubechies 2. Defaults to "haar".
     
     Raises:
@@ -249,21 +252,21 @@ def MODWT(
         RuntimeError: If the MODWT decomposition fails.
 
     Returns:
-        tuple[np.ndarray, np.ndarray]: The wavelet and scaling coefficients.
+        tuple[ndarray, ndarray]: The wavelet and scaling coefficients.
     """
     return PyramidDWTs().MODWT(signal, transformType)
 
 
 def inverseMODWT(
-    transformCoefficients: np.ndarray | list[float],
-    scalingCoefficients: np.ndarray | list[float],
+    transformCoefficients: ndarray | list[float],
+    scalingCoefficients: ndarray | list[float],
     transformType: str = "haar"
-    ) -> np.ndarray:
+    ) -> ndarray:
     """Performs the inverse MODWT reconstruction using the provided wavelet and scaling coefficients.
     
     Args:
-        transformCoefficients (np.ndarray | list[float]): The wavelet coefficients from the MODWT decomposition.
-        scalingCoefficients (np.ndarray | list[float]): The scaling coefficients from the MODWT decomposition.
+        transformCoefficients (ndarray | list[float]): The wavelet coefficients from the MODWT decomposition.
+        scalingCoefficients (ndarray | list[float]): The scaling coefficients from the MODWT decomposition.
         transformType (str, optional): The type of transform to perform. "haar" for Haar, "db2" for Daubechies 2. Defaults to "haar".
     
     Raises:
@@ -271,6 +274,6 @@ def inverseMODWT(
         RuntimeError: If the inverse MODWT reconstruction fails.
 
     Returns:
-        np.ndarray: The reconstructed signal.
+        ndarray: The reconstructed signal.
     """
     return PyramidDWTs().inverseMODWT(transformCoefficients, scalingCoefficients, transformType)

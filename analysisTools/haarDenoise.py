@@ -1,4 +1,4 @@
-import numpy as np
+from numpy import ndarray, zeros, log, mean, floor, log2, sign
 from analysisTools.importLightCurve import LightCurveData
 from analysisTools.pyramidsDWTs import MODWT, inverseMODWT
 
@@ -7,7 +7,7 @@ from analysisTools.pyramidsDWTs import MODWT, inverseMODWT
 def haarDenoise(
         data: LightCurveData,
         thresholdMethod: str = "soft"
-        ) -> LightCurveData:
+        ) -> None:
     """Denoises the light curve data using the Haar wavelet transform and thresholding. The denoised data is added to the LightCurveData object as a new column.
 
     Args:
@@ -34,8 +34,8 @@ def haarDenoise(
         """
         n_l: int = 2 ** (maxLevel - level)
         prefactor: float = 2 ** (-0.5 * (level + 2))
-        firstLogTerm: float = np.log(n_l)
-        secondLogTerm: float = np.log(n_l * meanRate)
+        firstLogTerm: float = log(n_l)
+        secondLogTerm: float = log(n_l * meanRate)
         sqrtTerm: float = max((((4 * firstLogTerm) ** 2) + (8 * secondLogTerm)), 0)
         thresholdValue: float = prefactor * (2 * firstLogTerm + sqrtTerm ** 0.5)
         return thresholdValue
@@ -54,12 +54,12 @@ def haarDenoise(
         Returns:
             float: mean rate of the pre-burst data
         """
-        preBurstCounts: np.ndarray = data.burstData['totcounts'].to_numpy()
+        preBurstCounts: ndarray = data.burstData['totcounts'].to_numpy()
         timeInBin: float = 100e-6 * binSize
-        countsInBin: np.ndarray = np.zeros(len(preBurstCounts) - binSize)
+        countsInBin: ndarray = zeros(len(preBurstCounts) - binSize)
         for i in range(len(preBurstCounts) - binSize):
-            countsInBin[i] = np.sum(preBurstCounts[i:i + binSize])
-        meanRate: float = np.mean(countsInBin) / timeInBin
+            countsInBin[i] = sum(preBurstCounts[i:i + binSize])
+        meanRate: float = mean(countsInBin) / timeInBin
         return meanRate
 
 
@@ -67,7 +67,7 @@ def haarDenoise(
     burstData: list[float] = data.burstData['rate'].to_list()
     burstError: list[float] = data.burstData['error'].to_list()
 
-    maxLevel: int = int(np.floor(np.log2(len(burstData)))) - 1
+    maxLevel: int = int(floor(log2(len(burstData)))) - 1
 
     # get the Haar wavelet coefficients and scaling coefficients using the MODWT
     waveletCoeffs, scalingCoeffs = MODWT(burstData)
@@ -84,7 +84,7 @@ def haarDenoise(
                 if abs(waveletCoeffs[level][i]) < thresholdValue:
                     waveletCoeffs[level][i] = 0
                 else:
-                    waveletCoeffs[level][i] = np.sign(waveletCoeffs[level][i]) * (abs(waveletCoeffs[level][i]) - thresholdValue)
+                    waveletCoeffs[level][i] = sign(waveletCoeffs[level][i]) * (abs(waveletCoeffs[level][i]) - thresholdValue)
         elif thresholdMethod == "hard":
             for i in range(len(waveletCoeffs[level])):
                 if abs(waveletCoeffs[level][i]) < thresholdValue:
@@ -94,76 +94,37 @@ def haarDenoise(
 
 
     # invert the transform to get the denoised data
-    denoisedData: np.ndarray = inverseMODWT(
+    denoisedData: ndarray = inverseMODWT(
         waveletCoeffs,
         scalingCoeffs
         )
     data.burstData['denoisedRate'] = denoisedData
 
 
-    return data
-
-
-def plotlightCurve(
+if __name__ == "__main__":
+    def plotlightCurve(
         data: LightCurveData
         ) -> None:
-    """Plots the light curve data
-
-    Args:
-        data (LightCurveData): light curve data to plot
-    """
-    import matplotlib.pyplot as plt
-
-    plt.figure(figsize=(10, 6))
-    plt.plot(
-        data.burstData['time'],
-        data.burstData['rate'],
-        label='Original Data'
-        )
-    plt.plot(
-        data.burstData['time'],
-        data.burstData['denoisedRate'],
-        label='Denoised Data',
-        color='red',
-        alpha=0.5
-        )
-    plt.xlabel('Time (s)')
-    plt.ylabel('Rate (counts/s)')
-    plt.legend()
-    plt.show()
+        import matplotlib.pyplot as plt
 
 
-def getData():
-    return LightCurveData("GRB080319B")
-
-
-data = getData()
-haarDenoise(data)
-plotlightCurve(data)
-
-
-#    
-#    
-#
-#
-#
-#    # wavelet transform of the data. THis needs to be replaced with some C++ code as it is too slow.
-#    coeffs: list = pywt.swt(
-#        paddedData,
-#        'haar'
-#        )
-#    print(f"coeffs: {coeffs}")
-#    return np.array(coeffs)
-    # thresholding of the wavelet coefficients
-
-    # inverse wavelet transform to get the denoised data
-
-
-
-#if __name__ == "__main__":
-#    grbName: str = "GRB080319B"
-#    data: LightCurveData = LightCurveData(grbName)
-#    denoisedData: np.ndarray = haarDenoise(
-#        data
-#        )
-
+        plt.figure(figsize=(10, 6))
+        plt.plot(
+            data.burstData['time'],
+            data.burstData['rate'],
+            label='Original Data'
+            )
+        plt.plot(
+            data.burstData['time'],
+            data.burstData['denoisedRate'],
+            label='Denoised Data',
+            color='red',
+            alpha=0.5
+            )
+        plt.xlabel('Time (s)')
+        plt.ylabel('Rate (counts/s)')
+        plt.legend()
+        plt.show()
+    data: LightCurveData = LightCurveData("GRB080319B")
+    haarDenoise(data)
+    plotlightCurve(data)

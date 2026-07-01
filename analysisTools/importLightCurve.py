@@ -1,7 +1,6 @@
-import pandas as pd
-import numpy as np
+from pandas import read_csv, to_numeric, DataFrame
+from numpy import ndarray, zeros_like, diff, argmax
 
-from time import time
 
 # class to hold the data for a GRB
 class LightCurveData:
@@ -12,8 +11,8 @@ class LightCurveData:
         
         Attributes:
             name (str): Name of the GRB, this should follow the standard naming convention for GRBs, e.g. "GRB080319B"
-            preBurstData (pd.DataFrame): DataFrame containing the pre-burst light curve data for the GRB. This data is read in from the CSV file "data/processed/{GRBName}/{GRBName}PreBurstLC.csv"
-            burstData (pd.DataFrame): DataFrame containing the burst light curve data for the GRB. This data is read in from the CSV file "data/processed/{GRBName}/{GRBName}LC.csv"
+            preBurstData (DataFrame): DataFrame containing the pre-burst light curve data for the GRB. This data is read in from the CSV file "data/processed/{GRBName}/{GRBName}PreBurstLC.csv"
+            burstData (DataFrame): DataFrame containing the burst light curve data for the GRB. This data is read in from the CSV file "data/processed/{GRBName}/{GRBName}LC.csv"
         
         ## Notes:
             The csvToDataFrame() method reads in the CSV file and stores the data in a pandas DataFrame. Pandas is a suboptimal choice for this task as it can be computationally expensive. However, it is quick to convert columns into numeric data. Try not to do any operations on the DataFrame itself; rather convert the columns to numpy arrays and operate on those instead, then put the results back into the DataFrame if needed.
@@ -30,20 +29,20 @@ class LightCurveData:
         self.name: str = GRBName
         self.__preBurstCSV: str = f"data/processed/{self.name}/{self.name}PreBurstLC.csv"
         self.__burstCSV: str = f"data/processed/{self.name}/{self.name}BurstLC.csv"
-        self.preBurstData: pd.DataFrame = self.__generateDataFrame(self.__preBurstCSV)
-        self.burstData: pd.DataFrame = self.__generateDataFrame(self.__burstCSV)
+        self.preBurstData: DataFrame = self.__generateDataFrame(self.__preBurstCSV)
+        self.burstData: DataFrame = self.__generateDataFrame(self.__burstCSV)
         self.__truncateAtSlewPoint()
 
     def __generateDataFrame(
             self,
             CSVFilePath: str
-        ) -> pd.DataFrame:
+        ) -> DataFrame:
         # read in the CSV file and store the data as a pandas DataFrame
-        data: pd.DataFrame = pd.read_csv(CSVFilePath)
+        data: DataFrame = read_csv(CSVFilePath)
 
         # convert all the data to numeric, coercing errors to NaN
         for column in data.columns:
-            data[column] = pd.to_numeric(data[column], errors='coerce')
+            data[column] = to_numeric(data[column], errors='coerce')
 
         # correct the time column to be relative to the trigger time
         triggerTime: float = data['time'].to_numpy()[0]
@@ -51,8 +50,8 @@ class LightCurveData:
 
         # get the time in each bin
         timeArray = data['time'].to_numpy()
-        timeInBin: np.ndarray = np.zeros_like(timeArray)
-        timeInBin[:-1] = np.diff(timeArray)
+        timeInBin: ndarray = zeros_like(timeArray)
+        timeInBin[:-1] = diff(timeArray)
         data['timeInBin'] = timeInBin
 
         return data
@@ -65,7 +64,7 @@ class LightCurveData:
         # find the slew point in the burst data
         maxBinSize: float = self.burstData['timeInBin'].max()
         if maxBinSize > 100e-6:
-            slewPointIndex: int = np.argmax(self.burstData['timeInBin'].to_numpy())
+            slewPointIndex: int = argmax(self.burstData['timeInBin'].to_numpy())
             # truncate the data after the slew point
             self.burstData = self.burstData.iloc[:slewPointIndex]
             self.preBurstData = self.preBurstData.iloc[:slewPointIndex]

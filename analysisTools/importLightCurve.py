@@ -1,7 +1,7 @@
 import pandas as pd
 import numpy as np
-from scipy.signal import lfilter
 
+from time import time
 
 # class to hold the data for a GRB
 class LightCurveData:
@@ -50,12 +50,9 @@ class LightCurveData:
         data['time'] = data['time'] - triggerTime
 
         # get the time in each bin
-        timeInBin: np.ndarray = np.zeros_like(data['time'])
-        for i in range(len(data['time'])):
-            if i == len(data['time']) - 1:
-                timeInBin[i] = 0
-            else:
-                timeInBin[i] = data['time'].to_numpy()[i + 1] - data['time'].to_numpy()[i]
+        timeArray = data['time'].to_numpy()
+        timeInBin: np.ndarray = np.zeros_like(timeArray)
+        timeInBin[:-1] = np.diff(timeArray)
         data['timeInBin'] = timeInBin
 
         return data

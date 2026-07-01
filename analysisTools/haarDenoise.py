@@ -1,4 +1,4 @@
-from numpy import ndarray, zeros, log, mean, floor, log2, sign, cumsum
+from numpy import ndarray, zeros, log, mean, floor, log2, sign, cumsum, sqrt
 from analysisTools.importLightCurve import LightCurveData
 from analysisTools.pyramidsDWTs import MODWT, inverseMODWT
 from tqdm import tqdm
@@ -7,18 +7,20 @@ from tqdm import tqdm
 
 def haarDenoise(
         data: LightCurveData,
-        thresholdMethod: str = "soft"
+        thresholdMethod: str = "soft",
+        backgroundNoiseModel: str = "poisson"
         ) -> None:
     """Denoises the light curve data using the Haar wavelet transform and thresholding. The denoised data is added to the LightCurveData object as a new column.
 
     Args:
         data (LightCurveData): light curve data to denoise
         thresholdMethod (str, optional): thresholding method to use. Defaults to "soft". Options are "soft" and "hard". 
+        backgroundNoiseModel (str, optional): background noise model to use. Defaults to "poisson". Options are "poisson" and "gaussian".
 
     Returns:
         LightCurveData: light curve data with denoised data added as a new column
     """
-    def threshold(
+    def thresholdPoisson(
             level: int,
             maxLevel: int,
             meanRate: float
@@ -39,6 +41,24 @@ def haarDenoise(
         secondLogTerm: float = log(n_l * meanRate)
         sqrtTerm: float = max((((4 * firstLogTerm) ** 2) + (8 * secondLogTerm)), 0)
         thresholdValue: float = prefactor * (2 * firstLogTerm + sqrtTerm ** 0.5)
+        return thresholdValue
+
+
+    def thresholdGaussian(
+            level: int,
+            maxLevel: int
+            ) -> float:
+        """Calculates the threshold for the Haar denoising using the Gaussian noise model
+
+        Args:
+            level (int): level of the wavelet transform
+            maxLevel (int): maximum level of the wavelet transform
+
+        Returns:
+            float: threshold for the given level
+        """
+        n_l: int = 2 ** (maxLevel - level)
+        thresholdValue: float = sqrt(2 * log(n_l))
         return thresholdValue
 
 
@@ -64,9 +84,7 @@ def haarDenoise(
         return meanRate
 
 
-
     burstData: list[float] = data.burstData['rate'].to_list()
-    burstError: list[float] = data.burstData['error'].to_list()
 
     maxLevel: int = int(floor(log2(len(burstData)))) - 1
 
@@ -79,7 +97,12 @@ def haarDenoise(
     for level in tqdm(range(maxLevel), desc="Thresholding wavelet coefficients", unit="level"):
         # calculate the threshold for the current level
         meanRate: float = findPoissonRate(data, 2 ** level)
-        thresholdValue: float = threshold(level, maxLevel, meanRate)
+        if backgroundNoiseModel == "poisson":
+            thresholdValue: float = thresholdPoisson(level, maxLevel, meanRate)
+        elif backgroundNoiseModel == "gaussian":
+            thresholdValue: float = thresholdGaussian(level, maxLevel, meanRate)
+        else:
+            raise ValueError(f"Invalid background noise model: {backgroundNoiseModel}. Must be 'poisson' or 'gaussian'.")
 
         # apply the thresholding to the level's wavelet coefficients
         if thresholdMethod == "soft":
@@ -94,34 +117,6 @@ def haarDenoise(
                     waveletCoeffs[level][i] = 0
         else:
             raise ValueError(f"Invalid threshold method: {thresholdMethod}. Must be 'soft' or 'hard'.")
-
-
-
-
-
-
-
-
-
-#    # apply thresholding to the wavelet coefficients
-#    for level in range(maxLevel):
-#        # calculate the threshold for the current level
-#        meanRate: float = findPoissonRate(data, 2 ** level)
-#        thresholdValue: float = threshold(level, maxLevel, meanRate)
-#
-#        # apply the thresholding to the level's wavelet coefficients
-#        if thresholdMethod == "soft":
-#            for i in range(len(waveletCoeffs[level])):
-#                if abs(waveletCoeffs[level][i]) < thresholdValue:
-#                    waveletCoeffs[level][i] = 0
-#                else:
-#                    waveletCoeffs[level][i] = sign(waveletCoeffs[level][i]) * (abs(waveletCoeffs[level][i]) - thresholdValue)
-#        elif thresholdMethod == "hard":
-#            for i in range(len(waveletCoeffs[level])):
-#                if abs(waveletCoeffs[level][i]) < thresholdValue:
-#                    waveletCoeffs[level][i] = 0
-#        else:
-#            raise ValueError(f"Invalid threshold method: {thresholdMethod}. Must be 'soft' or 'hard'.")
     print("Thresholding complete.")
 
     print("Inverting the transform to get the denoised data...")
@@ -157,6 +152,8 @@ if __name__ == "__main__":
         plt.ylabel('Rate (counts/s)')
         plt.legend()
         plt.show()
+
+
     data: LightCurveData = LightCurveData("GRB080319B")
     haarDenoise(data)
     plotlightCurve(data)

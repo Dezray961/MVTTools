@@ -88,7 +88,7 @@ class MVTFinder:
             N: int = len(detailCoefficients) # length of the detail coefficients at the current level
             sigmaW2: np.ndarray = np.zeros(N) # array to store the Allan variance for the current level
 
-            # loop over each time index in the detail coefficients
+            # loop over each time index in the detail coefficientsj
             for timeIndex in range(N):
                 indices: list[int] = self.__haarSupport(level, timeIndex, N)
 
@@ -113,4 +113,4 @@ if __name__ == "__main__":
     data = LightCurveData("GRB080319B")
     haarDenoise(data)
     rebinLightCurve(data, "swiftBAT", snrThreshold=5.0)
-    mvtFinder = MVTFinder(data, timeWindow=(0, 100))
+    mvtFinder = MVTFinder(data, timeWindow=(0, len(data.rebinnedData)))

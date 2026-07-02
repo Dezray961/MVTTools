@@ -3,6 +3,9 @@ Adapt importLightCurve.py to work with the new pipline                          
 Make a script that can denoise a dataset.                                       ✅
 Make a script that can re-bin the data into constant S/N = 5 bins               ✅
     Look at how Golkhou's code does this                                        ✅
+Look into the uncertainty after denoising                                       ✅
+    Parametric Monte Carlo uncertainty propagation is the answer?               ✅
+Make a script to impliment the MC method
 Make or adapt old script that can find the undecimated Haar Wavelet transform
 Make a script that can:
     fit a straight line to the start of the Haar coefficients

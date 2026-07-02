@@ -11,8 +11,8 @@ Swift BAT data:
 """
 
 from analysisTools.importLightCurve import LightCurveData
-import numpy as np
-import pandas as pd
+from numpy import ndarray, array, sqrt
+from pandas import DataFrame
 
 from time import time
 
@@ -32,17 +32,17 @@ def swiftBATRebin(
     """
 
     # Extract the relevant data from the LightCurveData object
-    burstRate: np.ndarray = data.burstData['denoisedRate'].to_numpy()
-    burstError: np.ndarray = data.burstData['error'].to_numpy()
+    burstRate: ndarray = data.burstData['denoisedRate'].to_numpy()
+    burstError: ndarray = data.burstData['error'].to_numpy()
 
 
     # convert the burst rate and error to counts per bin
     deltaTime: float = 100e-6  # 100 microseconds in seconds
-    burstCounts: np.ndarray = burstRate * deltaTime
-    burstCountsError: np.ndarray = burstError * deltaTime
+    burstCounts: ndarray = burstRate * deltaTime
+    burstCountsError: ndarray = burstError * deltaTime
 
     # square the burst count error to get the variance
-    burstCountsVariance: np.ndarray = burstCountsError ** 2
+    burstCountsVariance: ndarray = burstCountsError ** 2
 
 
     # rebin the data to a constant SNR
@@ -62,7 +62,7 @@ def swiftBATRebin(
 
         # calculate the SNR for the current bin
         if accumulatedVariance > 0:
-            currentSNR: float = accumulatedCounts / np.sqrt(accumulatedVariance)
+            currentSNR: float = accumulatedCounts / sqrt(accumulatedVariance)
         else:
             currentSNR: float = 0.0
 
@@ -77,11 +77,11 @@ def swiftBATRebin(
             accumulatedTimeInBin = 0.0
     
     # convert the rebinned counts and variance back to rates and errors
-    rebinnedRate: np.ndarray = np.array(rebinnedCounts) / np.array(rebinnedTimeInBin)
-    rebinnedError: np.ndarray = np.sqrt(np.array(rebinnedVariance)) / np.array(rebinnedTimeInBin)
+    rebinnedRate: ndarray = array(rebinnedCounts) / array(rebinnedTimeInBin)
+    rebinnedError: ndarray = sqrt(array(rebinnedVariance)) / array(rebinnedTimeInBin)
 
     # create a new dataframe for the rebinned data
-    rebinnedData: pd.DataFrame = pd.DataFrame(
+    rebinnedData: DataFrame = DataFrame(
         {
         'time': rebinnedTime,
         'rate': rebinnedRate,
@@ -184,7 +184,7 @@ if __name__ == "__main__":
 
         grbName: str = "GRB080319B"
         data: LightCurveData = LightCurveData(grbName)
-        haarDenoise(data, thresholdMethod = thresholdMethod, thresholdScaleFactor = thresholdScaleFactor)
+        data.burstData['denoisedRate'] = haarDenoise(data, thresholdMethod = thresholdMethod, thresholdScaleFactor = thresholdScaleFactor)
         # swiftBAT test
         rebinLightCurve(data, "swiftBAT", 5.0)
         plotlightCurve(data)

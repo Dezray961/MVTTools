@@ -10,7 +10,7 @@ def haarDenoise(
         thresholdMethod: str = "soft",
         backgroundNoiseModel: str = "poisson",
         thresholdScaleFactor: float = 0.5
-        ) -> None:
+        ) -> ndarray:
     """Denoises the light curve data using the Haar wavelet transform and thresholding. The denoised data is added to the LightCurveData object as a new column.
 
     Args:
@@ -129,7 +129,7 @@ def haarDenoise(
         waveletCoeffs,
         scalingCoeffs
         )
-    data.burstData['denoisedRate'] = denoisedData
+    return denoisedData
 
 
 if __name__ == "__main__":

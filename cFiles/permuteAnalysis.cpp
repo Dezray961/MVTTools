@@ -14,10 +14,7 @@ PermuteAnalysis::PermuteAnalysis
     double *timeArray,
     double *rateErrArray,
     int lenghtOfData,
-    int numberOfTimeBins,
-    bool burst,
-    double *preBurstPowerSetStds
-
+    int numberOfTimeBins
 )
 {
     this->lengthOfData = lenghtOfData;
@@ -25,17 +22,11 @@ PermuteAnalysis::PermuteAnalysis
     this->rate.reserve(lenghtOfData);
     this->time.reserve(lenghtOfData);
     this->rateErr.reserve(lenghtOfData);
-    this->preBurstPowerSetStdDev.reserve(numberOfTimeBins);
-    this->burst = burst;
     for (int i = 0; i < lenghtOfData; i++)
     {
         this->rate.push_back(rateArray[i]);
         this->time.push_back(timeArray[i]);
         this->rateErr.push_back(rateErrArray[i]);
-    }
-    for (int i = 0; i < numberOfTimeBins; i++)
-    {
-        this->preBurstPowerSetStdDev.push_back(preBurstPowerSetStds[i]);
     }
     findKMax();
     findKSet();

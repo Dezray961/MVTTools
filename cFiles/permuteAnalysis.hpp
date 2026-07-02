@@ -26,8 +26,6 @@ class PermuteAnalysis
          * @param rateErrArray Pointer to an array of rate error values.
          * @param lenghtOfData The length of the data arrays.
          * @param numberOfTimeBins The number of time bins to use for the analysis.
-         * @param burst A boolean indicating whether the analysis is for a burst or pre-burst.
-         * @param preBurstPowerSetStds Pointer to an array of pre-burst power set standard deviations.
          */
         PermuteAnalysis
         (
@@ -35,9 +33,7 @@ class PermuteAnalysis
             double *timeArray,
             double *rateErrArray,
             int lenghtOfData,
-            int numberOfTimeBins,   
-            bool burst,
-            double *preBurstPowerSetStds
+            int numberOfTimeBins
         );
 
         void runAnalysis();

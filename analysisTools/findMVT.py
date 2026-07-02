@@ -1,42 +1,54 @@
-from analysisTools.importLightCurve import LightCurveData
-from analysisTools.pyramidsDWTs import MODWT
-import numpy as np
+#### I am also not sure how the paper has so many data points for the VT vs k plot.
 
-class MVTFinder:
-    """
-    Class to find the MVT of a given light curve data. It takes in a LightCurveData object and a time window, and provides methods to find the MVT of the light curve data within that time window.
-    """
+
+from analysisTools.importLightCurve import LightCurveData
+import numpy as np
+import pandas as pd
+import ctypes
+import os
+from contextlib import chdir
+from threading import Thread
+import time
+import matplotlib.pyplot as plt
+
+from tqdm import tqdm
+
+
+
+# time decorator
+def timeit(func):
+    def wrapper(*args, **kwargs):
+        start_time = time.time()
+        result = func(*args, **kwargs)
+        end_time = time.time()
+        print(f"{func.__name__} took {end_time - start_time} seconds to execute.")
+        return result
+    return wrapper
+
+
+# class to hand data to the C++ code and get the results back
+class analyseLightCurve:
+    # constructor for the MVTAnalysis class
     def __init__(
             self,
             data: LightCurveData,
-            timeWindow: tuple[int, int]
-        ) -> None:
-        """
-        Initializes the MVTFinder class with the given light curve data and time window size.
+            numberOfTimeBins: int = 64,
+            timeWindow: tuple[int, int] = None,
+            ) -> None:
+        super().__init__()
+        self.__data = data
+        if timeWindow is not None:
+            self.__timeWindow = timeWindow
+            self.__windowData()
+        self.__rebinnedData = self.__data.rebinnedData
+        self.__numberOfTimeBins = numberOfTimeBins
+        self.__lengthOfData = len(self.__rebinnedData)
+        self.__rebinnedData['logRate'] = np.log(self.__rebinnedData['rate'].to_numpy())
+        self.__rebinnedData['logRateErrorSquared'] = (self.__rebinnedData['error'].to_numpy() / self.__rebinnedData['rate'].to_numpy())**2
+        self.cWrapper()
+        self.runAnalysis()
 
-        Args:
-            data (LightCurveData): The light curve data to analyze. This should already be denoised and rebinned to a constant SNR.
-            timeWindow (tuple[int, int]): The time window to consider for MVT calculation. Should be a tuple of two integers representing the start and end indices of the time window in the rebinned data.
-        """
-        # store the light curve data and time window as instance variables
-        self.__data: LightCurveData = data
-        self.__timeWindow: tuple[int, int] = timeWindow
-        # window the data to the specified time window
-        self.__windowData()
-        # extract the log rate  from the rebinned data and store it as an instance variable
-        self.__logRate: np.ndarray = np.log(data.rebinnedData['rate'].to_numpy())
-        # calculate the propagated error of the log rate and store it as an instance variable
-        self.__propagatedError: np.ndarray = data.rebinnedData['error'].to_numpy() / data.rebinnedData['rate'].to_numpy()
-        # get the time in bins from the rebinned data and store it as an instance variable
-        self.__timeInBins: np.ndarray = data.rebinnedData['timeInBin'].to_numpy()
-        # find the undecimated Haar transform of the log rate and store the detail and scale coefficients as instance variables
-        self.__detailCoefficients, self.__scaleCoefficients = MODWT(self.__logRate)
-        # find the Allan variance of the detail coefficients and store it as an instance variable
-        self.__allanVariance: np.ndarray = self.__getAllanVariance()
-        self.haarWaveletSF: np.ndarray = np.sqrt(self.__allanVariance)
-        print(self.haarWaveletSF)
-        
-    
+
     def __windowData(self) -> None:
         """
         Windows the light curve data to the specified time window. This method updates the data.rebinnedData attribute to only include the data within the specified time window. This is to save unnecessary calculations on data outside the time window of interest.
@@ -47,78 +59,238 @@ class MVTFinder:
         self.__data.rebinnedData = self.__data.rebinnedData.iloc[startIndex:endIndex + 1]
 
 
-    @staticmethod
-    def __haarSupport(
-            level: int,
-            timeIndex: int,
-            N: int
-            ) -> int:
-        """
-        Calculates the support of the Haar wavelet at a given level and time index. The support is the range of time indices over which the Haar wavelet is non-zero. This method is used to determine the range of time indices that contribute to the calculation of the MVT at a given time index.
 
-        Args:
-            level (int): The level of the Haar wavelet. Level 0 corresponds to the coarsest scale, and higher levels correspond to finer scales.
-            timeIndex (int): The time index for which to calculate the support of the Haar wavelet.
-            N (int): The total number of time indices in the data. This is used to wrap around the time indices when calculating the support of the Haar wavelet.
 
-        Returns:
-            int: The support of the Haar wavelet at the given level and time index.
-        """
-        L: int = 2 ** level
-        return [
-            (timeIndex + k) % N
-            for k in range(L)
-            ]
+    # method to hand the data to the C++ code and get the results back
+    def cWrapper(
+            self
+    ) -> None:
+        # tell the interpreter where to find the C++ shared library
+        self.libPath: str = os.path.abspath(os.path.join(os.getcwd(), "cFiles", "findMVT.so"))
+        self.lib: ctypes.CDLL = ctypes.CDLL(self.libPath)
+        # declare the argument and return types for the C++ function
+        self.lib.allocatePermuteAnalysis.argtypes = [
+            ctypes.POINTER(ctypes.c_double),
+            ctypes.POINTER(ctypes.c_double),
+            ctypes.POINTER(ctypes.c_double),
+            ctypes.c_int,
+            ctypes.c_int,
+            ctypes.c_bool,
+            ctypes.POINTER(ctypes.c_double)
+        ]
+        self.lib.allocatePermuteAnalysis.restype = ctypes.c_void_p
+        self.lib.getLogBinEdges.argtypes = [ctypes.c_void_p]
+        self.lib.getLogBinEdges.restype = ctypes.POINTER(ctypes.c_double)
+        self.lib.getLogBinCenters.argtypes = [ctypes.c_void_p]
+        self.lib.getLogBinCenters.restype = ctypes.POINTER(ctypes.c_double)
+        self.lib.getPowerSetAverages.argtypes = [ctypes.c_void_p, ctypes.c_int]
+        self.lib.getPowerSetAverages.restype = ctypes.POINTER(ctypes.c_double)
+        self.lib.getPowerSetStdDevs.argtypes = [ctypes.c_void_p, ctypes.c_int]
+        self.lib.getPowerSetStdDevs.restype = ctypes.POINTER(ctypes.c_double)
+        self.lib.runPermuteAnalysis.argtypes = [ctypes.c_void_p]
+        self.lib.runPermuteAnalysis.restype = None
+        self.lib.getPermutationsCompleted.argtypes = [ctypes.c_void_p]
+        self.lib.getPermutationsCompleted.restype = ctypes.c_int
+        self.lib.getTotalPermutations.argtypes = [ctypes.c_void_p]
+        self.lib.getTotalPermutations.restype = ctypes.c_int
+        self.lib.isAnalysisComplete.argtypes = [ctypes.c_void_p]
+        self.lib.isAnalysisComplete.restype = ctypes.c_int
+        self.lib.freePermuteAnalysis.argtypes = [ctypes.c_void_p]
+        self.lib.freePermuteAnalysis.restype = None
+
+
+    # method to run the C++ code to get the results back
+    @timeit
+    def runAnalysis(
+            self
+            ) -> None:
+        self.analysis = self.lib.allocatePermuteAnalysis(
+            self.__rebinnedData['logRate'].to_numpy(dtype=np.double, copy=False).ctypes.data_as(ctypes.POINTER(ctypes.c_double)),
+            self.__rebinnedData['time'].to_numpy(dtype=np.double, copy=False).ctypes.data_as(ctypes.POINTER(ctypes.c_double)),
+            self.__rebinnedData['logRateErrorSquared'].to_numpy(dtype=np.double, copy=False).ctypes.data_as(ctypes.POINTER(ctypes.c_double)),
+            self.__lengthOfData,
+            ctypes.c_int(self.__numberOfTimeBins)
+        )
+
+        worker = Thread(target=self.lib.runPermuteAnalysis, args=(self.analysis,))
+        worker.start()
+
+        totalPermutations = self.lib.getTotalPermutations(self.analysis)
+        lastCompleted = 0
+        progressBar = tqdm(total=totalPermutations, desc='Permutations', unit='perm')
+
+        while worker.is_alive():
+            completed = self.lib.getPermutationsCompleted(self.analysis)
+            if completed > lastCompleted:
+                if progressBar is not None:
+                    progressBar.update(completed - lastCompleted)
+                lastCompleted = completed
+            time.sleep(0.05)
+
+        worker.join()
+
+        completed = self.lib.getPermutationsCompleted(self.analysis)
+        if completed > lastCompleted and progressBar is not None:
+            progressBar.update(completed - lastCompleted)
+
+        if progressBar is not None:
+            progressBar.close()
+
+        self.logBinEdges: np.ndarray = self.getLogBinEdgesAsArray()
+        self.logBinCentres: np.ndarray = self.getLogBinCentres()
+        self.powerSetAverages: np.ndarray = self.getPowerSetAverages()
+        self.powerSetStdDevs: np.ndarray = self.getPowerSetStdDevs()
+
+
+    # method to conbert the log bin edges set to an array of doubles
+    def getLogBinEdgesAsArray(
+            self
+            ) -> np.ndarray:
+        logBinEdgesArrayPtr = self.lib.getLogBinEdges(self.analysis)
+        logBinEdgesSize = self.__numberOfTimeBins + 1
+        LogBinEdgesArray: np.ndarray = np.ctypeslib.as_array(
+            logBinEdgesArrayPtr,
+            shape=(logBinEdgesSize,))
+        return np.array(LogBinEdgesArray, copy=True)
+
+
+    # method to convert the log bin centres set to an array of doubles
+    def getLogBinCentres(
+            self
+            ) -> np.ndarray:
+        logBinCentresArrayPtr = self.lib.getLogBinCenters(self.analysis)
+        logBinCentresSize = self.__numberOfTimeBins
+        LogBinCentresArray: np.ndarray = np.ctypeslib.as_array(
+            logBinCentresArrayPtr,
+            shape=(logBinCentresSize,))
+        return np.array(LogBinCentresArray, copy=True)
     
 
+    # method to convert the power set averages to an array of doubles
+    def getPowerSetAverages(
+            self
+            ) -> np.ndarray:
+        PowerSetAveragesArray: np.ndarray = np.array(
+            [self.lib.getPowerSetAverages(self.analysis, index)[0] for index in range(self.__numberOfTimeBins)]
+        )
+        return PowerSetAveragesArray
+    
 
-    def __getAllanVariance(self) -> np.ndarray:
-        """
-        Calculates the Allan variance of the detail coefficients obtained from the MODWT Haar transform of the np.log rate.
+    # method to convert the power set standard deviations to an array of doubles
+    def getPowerSetStdDevs(
+            self
+            ) -> np.ndarray:
+        PowerSetStdDevsArray: np.ndarray = np.array(
+            [self.lib.getPowerSetStdDevs(self.analysis, index)[0] for index in range(self.__numberOfTimeBins)]
+        )
+        return PowerSetStdDevsArray
+    
 
-        Returns:
-            np.ndarray: The Allan variance of the detail coefficients.
-        """
-        # get the number of levels in the detail coefficients
-        numLevels: int = len(self.__detailCoefficients)
-        allanVariance: np.ndarray = np.zeros(numLevels)
-        for level in range(numLevels):
-            # get the detail coefficients for the current level
-            detailCoefficients: np.ndarray = self.__detailCoefficients[level]
-            N: int = len(detailCoefficients) # length of the detail coefficients at the current level
-            sigmaW2: np.ndarray = np.zeros(N) # array to store the Allan variance for the current level
-
-            # loop over each time index in the detail coefficientsj
-            for timeIndex in range(N):
-                indices: list[int] = self.__haarSupport(level, timeIndex, N)
-
-                sigmaW2[timeIndex] = (
-                    np.sum(
-                        self.__propagatedError[indices] ** 2
-                    ) / (2 ** level)
-                )
-            allanVariance[level] = np.mean(detailCoefficients ** 2 - sigmaW2)
-
-        return allanVariance
+    # method to find the uncertainty in the time bins
+    def getTimeBinUncertainty(
+            self
+            ) -> np.ndarray:
+        self.timeBinUncertaintyArray: list = []
+        for i, edge in enumerate(self.logBinEdges):
+            if i == 0:
+                continue
+            self.timeBinUncertaintyArray.append((edge - self.logBinEdges[i-1]) / 2)
+        self.timeBinUncertaintyArray = np.array(self.timeBinUncertaintyArray)
 
 
+    def __del__(self) -> None:
+        if hasattr(self, "analysis") and self.analysis:
+            if hasattr(self, "lib"):
+                self.lib.freePermuteAnalysis(self.analysis)
+            self.analysis = None
+
+
+# class to analyse the light curves for pre-burst and burst data for a given GRB.
+#class analyseGRB:
+#    def __init__(
+#            self,
+#            GRBName: str,
+#            numberOfTimeBins: int = 64
+#            ) -> None:
+#        self.GRBName: str = GRBName
+#        self.__numberOfTimeBins: int = numberOfTimeBins
+#        self.preBurstAnalysis: analyseLightCurve = analyseLightCurve(
+#            self.GRBName,
+#            segment="pre-burst",
+#            numberOfTimeBins=self.__numberOfTimeBins,
+#            )
+#        self.burstAnalysis: analyseLightCurve = analyseLightCurve(
+#            self.GRBName,
+#            segment="burst",
+#            numberOfTimeBins=self.__numberOfTimeBins,
+#            preBurstPowerSetStdDevs=self.preBurstAnalysis.powerSetStdDevs
+#            )
+#        self.logBinEdges: np.ndarray = self.burstAnalysis.logBinEdges
+#        self.logBinCentres: np.ndarray = self.burstAnalysis.logBinCentres
+#        self.powerSetAverages: np.ndarray = self.burstAnalysis.powerSetAverages - self.preBurstAnalysis.powerSetAverages
+#
+#    # method to filter the values that are less than 3σ from the background
+#    def filterValues(
+#            self
+#            ) -> None:
+#        pass
+#
+#    def plotVTvsDeltaT(
+#            self
+#            ) -> None:
+#        fig, ax = plt.subplots()
+#        ax.errorbar(
+#            10**self.logBinCentres,
+#            self.powerSetAverages,
+##            xerr=self.burstAnalysis.timeBinUncertaintyArray,
+#            ls='none',
+#            marker='x',
+#            color='blue')
+#        ax.set_ylabel('VT')
+#        ax.set_yscale('log')
+#        ax.set_xscale('log')
+#        ax.set_xlabel('$\\Delta t$')
+#        plt.savefig(f"data/processed/{self.GRBName}/{self.GRBName}VTvsDeltaT.png", dpi=300)
+#        plt.show()
 
 
 
 
 
 if __name__ == "__main__":
-    from analysisTools.rebinLightCurve import rebinLightCurve
+    """
+    this script won't generate the  plot if it is run in a terminal. In the interactive 
+    window of VSCode, it generates the plot. However, the interpreter in the interactive
+    window needs to be restarted after each run of the script. Otherwise, it will throw an
+    error allocateMVTAnalysis() is an undefined symbol. I don't know why this happens. 
+    """
+
     from analysisTools.parametricMCUncertainty import MonteCarloUncertainty
-    data = LightCurveData("GRB080319B")
+    from analysisTools.rebinLightCurve import rebinLightCurve
+
+
+    # compile the C++ code to a shared library
+    with chdir("cFiles"):
+        os.system("g++ -O3 -fPIC -shared -std=c++17 -fopenmp findMVT.cpp HaarCoefficient.hpp HaarCoefficient.cpp permuteAnalysis.cpp permuteAnalysis.hpp -o findMVT.so")
+    
+    # run the analysis on a specific GRB
+    grbName: str = "GRB080319B"
+    data: LightCurveData = LightCurveData(grbName)
     MonteCarloUncertainty(
         data = data,
         denoisedDataArgs = {
             "thresholdMethod": "hard",
             "thresholdScaleFactor": 0.5
         },
-        numSimulations = 500,
+        numSimulations = 100,
         highRAMSystem = False
     )
-    rebinLightCurve(data, "swiftBAT", snrThreshold=5.0)
-    mvtFinder = MVTFinder(data, timeWindow=(0, len(data.rebinnedData)))
+    rebinLightCurve(data,
+                    instrument = "swiftBAT",
+                    snrThreshold = 5.0
+                    )
+    analyseLightCurveObj: analyseLightCurve = analyseLightCurve(
+        data = data,
+        numberOfTimeBins = 64
+    )
+

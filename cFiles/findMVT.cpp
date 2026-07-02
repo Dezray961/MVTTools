@@ -12,9 +12,7 @@ extern "C" {
         double *time,
         double *rateErr,
         int lenghtOfData,
-        int numberOfTimeBins,
-        bool burst,
-        double *preBurstPowerSetStds
+        int numberOfTimeBins
     )
     {
         return new PermuteAnalysis
@@ -23,9 +21,7 @@ extern "C" {
             time,
             rateErr,
             lenghtOfData,
-            numberOfTimeBins,
-            burst,
-            preBurstPowerSetStds
+            numberOfTimeBins
         );
     }
 

@@ -5,7 +5,7 @@ Make a script that can re-bin the data into constant S/N = 5 bins               
     Look at how Golkhou's code does this                                        ✅
 Look into the uncertainty after denoising                                       ✅
     Parametric Monte Carlo uncertainty propagation is the answer?               ✅
-Make a script to impliment the MC method
+Make a script to impliment the MC method                                        ✅
 Make or adapt old script that can find the undecimated Haar Wavelet transform
 Make a script that can:
     fit a straight line to the start of the Haar coefficients
@@ -16,28 +16,23 @@ Make a script that can plot the MVT as a function of time for a full GRB
         Windows should be 1/3 seconds long
     Feed to pipeline
     plot
-Split out shell operations into a seperate script doing at home ✅
-    script for shell operations                                 ✅
-    change existing code to utalise it                          ✅
-        swiftBATCatalogueGRB.py                                 ✅
-        swiftBATDataFetcher.py                                  ✅
-        swiftBATInitalProcessing.py                             ✅
-        swiftBATInitialSetup.py                                 ✅
-        swiftBATProcessGRB.py                                   ✅
+Split out shell operations into a seperate script doing at home                 ✅
+    script for shell operations                                                 ✅
+    change existing code to utalise it                                          ✅
+        swiftBATCatalogueGRB.py                                                 ✅
+        swiftBATDataFetcher.py                                                  ✅
+        swiftBATInitalProcessing.py                                             ✅
+        swiftBATInitialSetup.py                                                 ✅
+        swiftBATProcessGRB.py                                                   ✅
 
 More vague
 Impliment tools to import Fermi data and process it to the same state as the SwiftBAT data
 Set up VPN on desktop
 
 
-There is also mention of a "pyramid method" in 'Wavelet Methods for Time Series Analysis'
-    This is supposed to be as fast as FFT so it might be worth looking into later as an optomisation step
 
 Work out how to actually calculate the MVT from the data rather than by eye.
 
-Set up something that can do a rolling window of data
-    (1/3 of a second (not sure how to impliment this for variable bins?))
-    This will allow me to plot the MVT as a function of time
 
 
 ✅

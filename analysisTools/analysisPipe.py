@@ -6,10 +6,10 @@
 """
 
 from analysisTools.importLightCurve import LightCurveData
-from analysisTools.haarDenoise import haarDenoise
 from analysisTools.rebinLightCurve import rebinLightCurve
 from analysisTools.pyramidsDWTs import MODWT
 from analysisTools.windowData import getWindowIndices
+from analysisTools.parametricMCUncertainty import MonteCarloUncertainty
 from pandas import DataFrame
 from tqdm import tqdm
 
@@ -17,7 +17,9 @@ from tqdm import tqdm
 def analysisPipe(
         GRBName: str,
         timeWindowSize: float = 0.3,
-        energyRange: str = "15-350"
+        energyRange: str = "15-350",
+        numSimulations: int = 1000,
+        highRAMSystem: bool = True
     ) -> None:
     """This function is the main analysis pipeline for a given GRB. It imports the light curve data, denoises the data, rebins the data to a constant SNR, windows the data to a specific time range, finds the undecimated Haar transform of each window, and finds the MVT of each window."""
     
@@ -27,7 +29,15 @@ def analysisPipe(
     # import the light curve data for the given GRB name and energy range
     data: LightCurveData = LightCurveData(GRBName)
     # denoise the light curve data using the Haar wavelet transform
-    data.burstData['denoisedRate'] = haarDenoise(data)
+    MonteCarloUncertainty(
+        data = data,
+        denoisedDataArgs = {
+            "thresholdMethod": "hard",
+            "thresholdScaleFactor": 0.5
+        },
+        numSimulations = numSimulations,
+        highRAMSystem = highRAMSystem
+    )
     # rebin the light curve data to a constant SNR
     rebinLightCurve(data,
                     instrument = "swiftBAT",
@@ -56,5 +66,6 @@ if __name__ == "__main__":
     grbName: str = "GRB080319B"
     analysisPipe(
         GRBName = grbName,
-        energyRange = "15-350"
+        numSimulations = 500,
+        highRAMSystem = False
         )

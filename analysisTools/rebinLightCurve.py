@@ -189,7 +189,7 @@ if __name__ == "__main__":
         rebinLightCurve(data, "swiftBAT", 5.0)
         plotlightCurve(data)
     
-    
+    # These tests do not include the Monte Carlo uncertainty calculation otherwise the runtime would be too long.
     quickAnalysis("soft", 1.0)
     print("Soft thresholding with scale factor 1.0")
     

@@ -74,7 +74,7 @@ class MVTFinder:
 
     def __getAllanVariance(self) -> np.ndarray:
         """
-        Calculates the Allan variance of the detail coefficients obtained from the undecimated Haar transform of the np.log rate.
+        Calculates the Allan variance of the detail coefficients obtained from the MODWT Haar transform of the np.log rate.
 
         Returns:
             np.ndarray: The Allan variance of the detail coefficients.
@@ -108,9 +108,17 @@ class MVTFinder:
 
 
 if __name__ == "__main__":
-    from analysisTools.haarDenoise import haarDenoise
     from analysisTools.rebinLightCurve import rebinLightCurve
+    from analysisTools.parametricMCUncertainty import MonteCarloUncertainty
     data = LightCurveData("GRB080319B")
-    haarDenoise(data)
+    MonteCarloUncertainty(
+        data = data,
+        denoisedDataArgs = {
+            "thresholdMethod": "hard",
+            "thresholdScaleFactor": 0.5
+        },
+        numSimulations = 500,
+        highRAMSystem = False
+    )
     rebinLightCurve(data, "swiftBAT", snrThreshold=5.0)
     mvtFinder = MVTFinder(data, timeWindow=(0, len(data.rebinnedData)))

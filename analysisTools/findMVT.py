@@ -14,6 +14,20 @@ import matplotlib.pyplot as plt
 from tqdm import tqdm
 
 
+"""
+THIS NEEDS EXTENSIVE WORK TO MAKE IT COMPATIBLE WITH THE PRE-PROCESSING DONE IN analysisPipe.py.
+The C++ files:
+    findMVT.cpp
+    HaarCoefficient.hpp
+    HaarCoefficient.cpp
+    permuteAnalysis.cpp
+    permuteAnalysis.hpp
+all need to be commented and adjusted.
+✅
+"""
+
+
+
 
 # time decorator
 def timeit(func):

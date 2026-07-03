@@ -2,7 +2,9 @@
 #define HARRCOEFFICIENT_HPP
 #include <vector>
 
-// MVTAnalysis class declaration
+/**
+ * The HaarCoefficient class calculates the Haar coefficients for a given dataset. It takes in vectors of rate, time, rate error, and time in bins, as well as the length of the data and a set of scales to use for the calculation. The class provides methods to calculate the Haar coefficient, its variance, and the power for each block of data, and stores the results in a vector.
+ */
 class HaarCoefficient
 {
     public:

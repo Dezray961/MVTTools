@@ -15,13 +15,16 @@ HaarCoefficient::HaarCoefficient
     std::vector<int> scaleSet
 )
 {
+    // initialize the data members with the provided arguments
     this->rate = rate;
     this->time = time;
     this->rateErr = rateErr;
     this->timeInBins = timeInBins;
     this->lengthOfData = lengthOfData;
     this->scaleSet = scaleSet;
+    // reserve space for the results vector
     results.reserve(lengthOfData * std::max<std::size_t>(1, scaleSet.size()));
+    // calculate the Haar coefficients and store the results
     findHaarCoefficients();
 };
 
@@ -58,11 +61,6 @@ double HaarCoefficient::findCoefficientVariance
     int halfBlockSize
 )
 {
-    /**
-     *  because the input block is the squared propagated error of the log of the count rate values, we can calculate 
-     * the variance of the Haar coefficient using the sliceMean and just dividing by the halfBlockSize. This is the same
-     * as 1/n^2 * sum(sigma^2) 
-     */
     auto leftBegin = rateErr.begin() + startIndex;
     auto rightBegin = leftBegin + halfBlockSize;
     auto rightEnd = rightBegin + halfBlockSize;

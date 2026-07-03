@@ -88,9 +88,7 @@ class analyseLightCurve:
             ctypes.POINTER(ctypes.c_double),
             ctypes.POINTER(ctypes.c_double),
             ctypes.c_int,
-            ctypes.c_int,
-            ctypes.c_bool,
-            ctypes.POINTER(ctypes.c_double)
+            ctypes.c_int
         ]
         self.lib.allocatePermuteAnalysis.restype = ctypes.c_void_p
         self.lib.getLogBinEdges.argtypes = [ctypes.c_void_p]

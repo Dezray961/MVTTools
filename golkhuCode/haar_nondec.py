@@ -6,7 +6,7 @@ have extensively modified the code to to be readable by me.
 
 
 from numpy import log,hstack,arange,round,unique,where,zeros,sqrt,cumsum,size,asarray,loadtxt,concatenate,size,ndarray
-import haar_denoise
+from analysisTools.haarDenoise import haarDenoise as haar_denoise
 
 def haar_nondec(
         fileInputPath: str,

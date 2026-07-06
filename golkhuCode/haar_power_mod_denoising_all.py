@@ -1,32 +1,19 @@
-#! /usr/bin/python
 
-# -*- coding: utf-8 -*-
-"""
-Created on Thu Aug. 27 00:48:00 2012
-
-@author: Zach
-"""
-#import sys
-#sys.modules[__name__].__dict__.clear()
-#import Image
-# import numpy as np
 from numpy import *
-#from numpy import log,loadtxt,arange,asarray,unique,concatenate,zeros,sqrt,ceil
 import haar_nondec
 import rate_rebin
 import do_rebin
 import haar_denoise            # Calling the haar_denoising modules
 import matplotlib.pyplot as plt
 import mu0_minimize_CHI2_fmin
-# import scipy as sp
-# import math
-#file_input = "00104298_bat_fine_wlc.txt"
+
 
 def haar2_power_mod2a_Zach_denoising(file_input): 
 
     def shift(l, n):
         return l[n:] + l[:n]
-         
+
+    # import raw data from the input files
     text_file1 = open("out2put_tMIN_10_23.txt", "a")
     text_file2 = open("out2put_chi2_10_23.txt", "a")
     text_file3 = open("out2put_name_10_23.txt", "a")
@@ -34,24 +21,35 @@ def haar2_power_mod2a_Zach_denoising(file_input):
     text_file5 = open("out2put_tmin_array_10_23.txt", "a")
     text_file6 = open("out2put_cvSize_10_23.txt", "a")
     
-    min_dt = 1.e-4
-    max_dt = 1.e3
+    # define the minimum and maximum deltaT values for the analysis
+    minimumDeltaT = 1.e-4
+    maximumDeltaT = 1.e3
     
-    bin_fac = 2.
-    nbins = bin_fac*ceil(log(max_dt/min_dt)/log(2.))
+    # define the number of bins for the analysis
+    binningFactor = 2.
+    numberOfBins = binningFactor*ceil(log(maximumDeltaT/minimumDeltaT)/log(2.))
     
-    ldt_min = log(min_dt)/log(2.)
-    ldt_max = log(max_dt)/log(2.)
+    # define the deltaT and deltaT1 arrays for the analysis
+    logMinimumDeltaT = log(minimumDeltaT)/log(2.)
+    logMaximumDeltaT = log(maximumDeltaT)/log(2.)
     
-    dta = 2**(ldt_min+(ldt_max-ldt_min)*arange(nbins)/(nbins-1.))
-    nbins=nbins-1
-    dta1=shift(dta,1)
-    dta = dta[0:nbins] ; dta1 = dta1[0:nbins]
-    sum1=zeros((nbins),dtype='float32') ; sum2=zeros((nbins),dtype='float32')
-    sum3=zeros((nbins),dtype='float32')
-    pspec0=zeros((nbins),dtype='float32') ; pspec=zeros((nbins),dtype='float32') 
-    dpspec=zeros((nbins),dtype='float32') ; nterms=zeros((nbins),dtype='float32')
-    min_dta=dta.max() ; max_dta=0.
+    # geometric spacing of deltaT bins
+    deltaTArray = 2**(logMinimumDeltaT+(logMaximumDeltaT-logMinimumDeltaT)*arange(numberOfBins)/(numberOfBins-1.))
+
+    numberOfBins = numberOfBins-1
+
+    dta1 = shift(deltaTArray,1)
+    deltaTArray = deltaTArray[0:numberOfBins]
+    dta1 = dta1[0:numberOfBins]
+    sum1 = zeros((numberOfBins),dtype = 'float32')
+    sum2 = zeros((numberOfBins),dtype = 'float32')
+    sum3 = zeros((numberOfBins),dtype = 'float32')
+    pspec0 = zeros((numberOfBins),dtype = 'float32')
+    pspec = zeros((numberOfBins),dtype = 'float32') 
+    dpspec = zeros((numberOfBins),dtype = 'float32')
+    nterms = zeros((numberOfBins),dtype = 'float32')
+    min_dta = deltaTArray.max()
+    max_dta = 0.
     #file_input = "00147478_bat_fine_wlc.txt"
     """
     00261664_bat_fine_wlc.txt
@@ -65,11 +63,11 @@ def haar2_power_mod2a_Zach_denoising(file_input):
     """
     #file_input = "00310219_bat_fine_wlc.txt"
     #file_input = "00217805_bat_fine_wlc.txt"
-    cv_chi2 = loadtxt('/Users/Vahid/python_codes/chi2_criticVal.txt',dtype='float32')
+    cv_chi2 = loadtxt('/Users/Vahid/python_codes/chi2_criticVal.txt',dtype = 'float32')
     dof = cv_chi2[:,0]
     cv = cv_chi2[:,1]
     
-    DATA = loadtxt(file_input, dtype=float32)
+    DATA = loadtxt(file_input, dtype = float32)
     if (DATA.size > 0):
         t = DATA[:,0]; dt = DATA[:,1]; rate = DATA[:,2]; drate = DATA[:,3]
         lrate = log(rate)
@@ -79,12 +77,12 @@ def haar2_power_mod2a_Zach_denoising(file_input):
         lrate = haar_denoise.haar_denoise(lrate,dlrate)
         #
         
-        nrepl=1 
-        dt00=t.max()-t.min()
-        dt0=dt ; t0=t ; lrate0=lrate ; dlrate0=dlrate
+        nrepl = 1 
+        dt00 = t.max()-t.min()
+        dt0 = dt ; t0 = t ; lrate0 = lrate ; dlrate0 = dlrate
         for k in xrange(0,nrepl):
-            t=concatenate((t,t0+(k+1)*dt00)) ; dt=concatenate((dt,dt0))
-            lrate=concatenate((lrate,lrate0)) ; dlrate=concatenate((dlrate,dlrate0))
+            t = concatenate((t,t0+(k+1)*dt00)) ; dt = concatenate((dt,dt0))
+            lrate = concatenate((lrate,lrate0)) ; dlrate = concatenate((dlrate,dlrate0))
         
         # get the difference of every two points
         resl = haar_nondec.haar_nondec(t,lrate,dlrate,16.)    
@@ -92,23 +90,21 @@ def haar2_power_mod2a_Zach_denoising(file_input):
         # return delta_t,tav,wav,dwav0,dwav ***from IDL***
         delta_t = resl2[0,:]; tav = resl2[1,:]
         wav = resl2[2,:]; dwav0 = resl2[3,:]; dwav = resl2[4,:]
-        diff2 = wav**2 ; diff_var=dwav**2*(nrepl+1.)/bin_fac ; diff_var0=dwav0**2
+        diff2 = wav**2 ; diff_var = dwav**2*(nrepl+1.)/binningFactor ; diff_var0 = dwav0**2
         
-        for j in xrange(0,int(nbins)):
-            h1 = where(delta_t >= dta[j]); h2 = where((delta_t < dta1[j])*(diff_var > 0))
+        for j in xrange(0,int(numberOfBins)):
+            h1 = where(delta_t >=  deltaTArray[j]); h2 = where((delta_t < dta1[j])*(diff_var > 0))
             h11 = asarray(h1); h22 = asarray(h2)
             h = intersect1d(h11,h22)
             nh = size(h)
-            #h=where(delta_t >= dta[j] and delta_t < dta1[j] and diff_var > 0,nh)
             if (nh > 1):
                 sum1[j] = sum(diff2[h]/diff_var0[h])
                 sum2[j] = sum(1./diff_var[h])
                 sum3[j] = sum(1./diff_var0[h])
                 nterms[j] = nh
-                if (dta[j] < min_dta): min_dta=dta[j]
-                if (dta1[j] > max_dta): max_dta=dta1[j]
+                if (deltaTArray[j] < min_dta): min_dta = deltaTArray[j]
+                if (dta1[j] > max_dta): max_dta = dta1[j]
         
-        #Sum2 = dpspec # Sum2 = 1/nterms * SUM_j,s 1/dwav^2_j,s
         
         
         g1 = where(sum3 > 0); g = asarray(g1)
@@ -119,27 +115,19 @@ def haar2_power_mod2a_Zach_denoising(file_input):
             dpspec[g] = sqrt(2.)/sqrt(sum2[g]*sum3[g]/nterms[g])
         
         
-        # maybe we can ignore this part!    
-        #g = where((abs(pspec - pspec0) < 2.*dpspec)*(dpspec > 0)) ;# g1 = asarray(g)
         g = where((abs(pspec) < 2.*dpspec)*(dpspec > 0)) ;# g1 = asarray(g)
         a = 1.
         ng = size(g)
-        """
-        if (ng > 3):
-            a = sum(pspec[g]*pspec0[g]/(dpspec[g]**2)) / sum((pspec0[g]/dpspec[g])**2)
-            pspec0[g] = pspec0[g]*a        
-        
-        print ' a:',a
-        """
+
         
         snr = 3.0
         cts = sum1  #-nterms*a 
         error = sqrt(sum3*2*nterms/((sum2<1.).choose(sum2,1))) ; dt = sum3
         
         #rate_rebin,dta,dta1,dt,cts,error,snr,0,2.,0.,ii
-        rateRebin1 = rate_rebin.rate_rebin(dta,dta1,dt,cts,error,snr,0.,2.,0)
+        rateRebin1 = rate_rebin.rate_rebin(deltaTArray,dta1,dt,cts,error,snr,0.,2.,0)
         rateRebin = asarray(rateRebin1)
-        dta = rateRebin[0]; dta1 = rateRebin[1]; dt = rateRebin[2]
+        deltaTArray = rateRebin[0]; dta1 = rateRebin[1]; dt = rateRebin[2]
         cts = rateRebin[3]; error = rateRebin[4]; index = rateRebin[5]
         #
         pspec = cts/((dt<1.).choose(dt,1)) ; dpspec = error/((dt<1.).choose(dt,1))
@@ -147,7 +135,6 @@ def haar2_power_mod2a_Zach_denoising(file_input):
         doRebin1 = do_rebin.do_rebin(sum3,index)
         doRebin = asarray(doRebin1)
         sum3 = doRebin
-        #
         #do_rebin,nterms,ii
         doRebin2 = do_rebin.do_rebin(nterms,index)
         doRebin_nterms = asarray(doRebin2)
@@ -155,7 +142,6 @@ def haar2_power_mod2a_Zach_denoising(file_input):
         
         pspec0  = a*nterms/((sum3<1.).choose(sum3,1))
         cts = cts/((nterms<1.).choose(nterms,1))
-        #
         #do_rebin,sum2,ii
         doRebin_sum2 = do_rebin.do_rebin(sum2,index)
         doRebin_sum2_2 = asarray(doRebin_sum2)
@@ -164,31 +150,25 @@ def haar2_power_mod2a_Zach_denoising(file_input):
         
         nsig = snr
         g0 = where((pspec > nsig*dpspec)*(dpspec>0))
-        #g00 = asarray(g0)
         ng0 = size(g0)
         if (ng0>1):
             g00 = where(dpspec > 0)
-            #g02 = asarray(g01);
             ng0 = size(g00)
-            #
-            all_t = 0.5*(dta[g00]+dta1[g00]); all_dt = 0.5*(dta1[g00]-dta[g00]) 
+            all_t = 0.5*(deltaTArray[g00]+dta1[g00]); all_dt = 0.5*(dta1[g00]-deltaTArray[g00]) 
             all_sig = pspec[g00]; all_err0 = dpspec[g00]
             all_err_chk = (1.+2*cts[g00]) 
             all_err = all_err0*sqrt(((all_err_chk<0).choose(all_err_chk,0))) #check for the argument being>0
             all_sig0 = pspec0[g00]
             sum2_2_2 = sum2_2[g00]
-            g1=where(all_sig < nsig*all_err0)
-            #g1 = asarray(g1)
+            g1 = where(all_sig < nsig*all_err0)
             ng = size(g1)
-            #
-            g2 = where(all_sig >= nsig*all_err0)
-            #g2 = asarray(g2)
+            g2 = where(all_sig >=  nsig*all_err0)
             ng2 = size(g2)
             if (ng > 0): # check for the arguments >0
                 all_sig_chk = all_sig[g1]+nsig*all_err0[g1]       
                 all_sig[g1] = sqrt(((all_sig_chk<0).choose(all_sig_chk,0)))
                 all_err[g1] = 0.
-                   
+                
             if (ng2 > 0):
                 # fitting mu_0 using chi2 minimization!
                 pspec_p = all_sig[g2]
@@ -201,30 +181,30 @@ def haar2_power_mod2a_Zach_denoising(file_input):
                 #all_err[g2] = 0.5*all_err[g2]/sqrt(all_sig0[g2])
                 all_err[g2] = 0.5*all_err[g2]/sqrt( all_sig[g2] )
                 #
-                miny=min(all_sig[g2])/2.
-                ##subplot(111, xscale="log", yscale="log")
+                miny = min(all_sig[g2])/2.
+                ##subplot(111, xscale = "log", yscale = "log")
                 #axis = [min_dta/2.,max_dta*2., miny,max(append(all_sig([g2],1.)))*2]
                 #errorbar(all_t, all_sig, all_dt, all_err,'r.-')
                 #
                 """
                 ax = plt.subplot(111)
-                ax.set_xscale("log", nonposx='clip')
-                ax.set_yscale("log", nonposy='clip')
-                plt.errorbar(all_t, all_sig, xerr=all_dt, yerr=all_err, fmt='.k')
+                ax.set_xscale("log", nonposx = 'clip')
+                ax.set_yscale("log", nonposy = 'clip')
+                plt.errorbar(all_t, all_sig, xerr = all_dt, yerr = all_err, fmt = '.k')
                 ax.set_xlim((min_dta/2.,max_dta*2.))
                 maxy = max(append(all_sig[g2],1.))*2
                 ax.set_ylim((miny, maxy))
                 ax.set_title('Title')
-                ax.set_xlabel(r'$\mathrm{\Delta T}$  [s]', fontsize=12)
-                ax.set_ylabel(r'Flux Variation  $\mathrm{\sigma_{X,\Delta t}}$  [%]', fontsize=12)
+                ax.set_xlabel(r'$\mathrm{\Delta T}$  [s]', fontsize = 12)
+                ax.set_ylabel(r'Flux Variation  $\mathrm{\sigma_{X,\Delta t}}$  [%]', fontsize = 12)
                 #ax.set_text(0.05, 0.9, 'Text goes here',
-                #        fontsize=14, transform=pl.gca().transAxes,
-                #        ha='left', va='bottom')
+                #        fontsize = 14, transform = pl.gca().transAxes,
+                #        ha = 'left', va = 'bottom')
                 #plt.show()
                 #       
                 xx = array([1.e-9,1.e9])
                 for i in xrange(int(log10(min_dt)*2.-4.), int(log10(max_dt)*2)):
-                    plt.plot(xx, miny*xx*exp(-i*log(10.)/2.),'c:', markersize=6)
+                    plt.plot(xx, miny*xx*exp(-i*log(10.)/2.),'c:', markersize = 6)
                 #
                 if (ng > 0):
                     plt.plot(all_t[g1], all_sig[g1], 'bv')
@@ -232,15 +212,15 @@ def haar2_power_mod2a_Zach_denoising(file_input):
                 plt.plot(xx,xx,'r-.')
                 base1 = file_input+"_fluxVariance.png"
                 base_address = '/home/zach/project_wavelet/Flux/'
-                plt.savefig(base_address+base1,format='png')
+                plt.savefig(base_address+base1,format = 'png')
                 plt.clf()
-                #plt.savefig('/Users/Vahid/Desktop/plots/file_input.png',format='png')
-                #plt.savefig('/Users/Vahid/untitled/PLOTS/testplot.pdf',format='pdf')
+                #plt.savefig('/Users/Vahid/Desktop/plots/file_input.png',format = 'png')
+                #plt.savefig('/Users/Vahid/untitled/PLOTS/testplot.pdf',format = 'pdf')
                 #Image.open('/Users/Vahid/untitled/PLOTS/testplot.png').save('/Users/Vahid/untitled/PLOTS/testplot.jpg','JPEG')
                 #plt.show()
                 """
                 
-                 
+                
                 #   
                 # fitting mu0:
                 #import mu0_minimize_CHI2_fmin
@@ -265,10 +245,10 @@ def haar2_power_mod2a_Zach_denoising(file_input):
                 ####plt.plot(tau3_time,chi2_diffTest,'r*--')
                 ###base2 = file_input+"_CHI2.png"
                 ###base_address = '/home/zach/project_wavelet/CHI2/'
-                ###plt.savefig(base_address+base2,format='png')
+                ###plt.savefig(base_address+base2,format = 'png')
                 ###plt.clf()
                 """
-                whr =where(diff(sign(mrg - prb))!=0)
+                whr  = where(diff(sign(mrg - prb))!= 0)
                 sz_whr = size(whr)
                 if (sz_whr > 0):
                     y1_1 = prb[whr[0]]
@@ -282,14 +262,14 @@ def haar2_power_mod2a_Zach_denoising(file_input):
                     t_cross = 'NA'
                 """
                             
-                wh_cv = where(CHI2 <= cv[:size(CHI2)])
+                wh_cv = where(CHI2 <=  cv[:size(CHI2)])
                 if (size(wh_cv) > 0):
                     ref = arange(size(wh_cv))
                     prnt_cvSize = file_input+':'+str(size(wh_cv))
                     text_file6.write("%s\n"%prnt_cvSize)
                     diff_ref = wh_cv - ref
-                    wh_ref = where(diff_ref[0] != 0)
-                    if (size(wh_ref[0]) == 0):
+                    wh_ref = where(diff_ref[0] !=  0)
+                    if (size(wh_ref[0])  ==  0):
                         CHI2 = [CHI2[x] for x in wh_cv[0]]
                         #tau_time = [tau_time[y] for y in wh_cv[0]]
                         tau_time = tau_time[:max(wh_cv[0])+2]
@@ -307,9 +287,9 @@ def haar2_power_mod2a_Zach_denoising(file_input):
                     
                     if (chi2_diffTest.size > 0):
                         thrshld = 2.
-                        sigma2_cl = where(chi2_diffTest >= thrshld)
+                        sigma2_cl = where(chi2_diffTest >=  thrshld)
                         sigma2_cl2 = sigma2_cl[0]
-                        if (sigma2_cl2.size == 0):
+                        if (sigma2_cl2.size  ==  0):
                             t_min = tau3_time[-1]
                             #prnt = file_input+'  : '+str(t_min)+'     D     '+str(chi2_diffTest[-1])
                             prnt = file_input+':'+str(t_min)+'  '+str(CHI2[-1]/(CHI2.size-1))+'  '+str(CHI2[-1])+'  '+str(CHI2.size-1)+' -1 '+str(chi2_diffTest[-1])
@@ -332,7 +312,7 @@ def haar2_power_mod2a_Zach_denoising(file_input):
                                 #prnt = file_input+'  : '+str(t_min)+'     U    '+str(chi2_diffTest[0])
                                 text_file1.write("%s\n"%prnt)
                                 
-                        print 't_min = ',t_min
+                        print(f't_min = {t_min}')
                     
     text_file1.close()    
     text_file2.close()

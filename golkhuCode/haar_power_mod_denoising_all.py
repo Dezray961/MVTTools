@@ -8,12 +8,24 @@ import matplotlib.pyplot as plt
 import mu0_minimize_CHI2_fmin
 
 
-def haar2_power_mod2a_Zach_denoising(file_input): 
+def haar2_power_mod2a_Zach_denoising(inputFileName): 
 
-    def shift(l, n):
-        return l[n:] + l[:n]
+    def shift(
+            list: list[any],
+            n: int
+            ) -> list[any]:
+        """ Shift the elements of a list by n positions to the left.
 
-    # import raw data from the input files
+        Args:
+            list list[any]: The list to be shifted.
+            n int: The number of positions to shift.
+
+        Returns:
+            list[any]: The shifted list.
+        """
+        return list[n:] + list[:n]
+
+    # open the output files for writing
     text_file1 = open("out2put_tMIN_10_23.txt", "a")
     text_file2 = open("out2put_chi2_10_23.txt", "a")
     text_file3 = open("out2put_name_10_23.txt", "a")
@@ -21,167 +33,297 @@ def haar2_power_mod2a_Zach_denoising(file_input):
     text_file5 = open("out2put_tmin_array_10_23.txt", "a")
     text_file6 = open("out2put_cvSize_10_23.txt", "a")
     
-    # define the minimum and maximum deltaT values for the analysis
-    minimumDeltaT = 1.e-4
-    maximumDeltaT = 1.e3
+    # define the minimum and maximum deltaT values
+    minimumDeltaTime: float = 1.0e-4
+    maximumDeltaTime: float = 1.0e3
     
-    # define the number of bins for the analysis
-    binningFactor = 2.
-    numberOfBins = binningFactor*ceil(log(maximumDeltaT/minimumDeltaT)/log(2.))
+    # define the number of bins
+    binningFactor: float = 2.0
+    numberOfBins: int = binningFactor * ceil(log(maximumDeltaTime /minimumDeltaTime ) / log(2.0))
     
-    # define the deltaT and deltaT1 arrays for the analysis
-    logMinimumDeltaT = log(minimumDeltaT)/log(2.)
-    logMaximumDeltaT = log(maximumDeltaT)/log(2.)
+    # define the deltaT and deltaT1 arrays
+    logMinimumDeltaTime: float = log(minimumDeltaTime)/log(2.0)
+    logMaximumDeltaTime: float = log(maximumDeltaTime)/log(2.0)
     
     # geometric spacing of deltaT bins
-    deltaTArray = 2**(logMinimumDeltaT+(logMaximumDeltaT-logMinimumDeltaT)*arange(numberOfBins)/(numberOfBins-1.))
+    timeBinStart: ndarray[float] = 2** (logMinimumDeltaTime +
+                        (logMaximumDeltaTime - logMinimumDeltaTime)
+                        *arange(numberOfBins) / (numberOfBins-1.))
 
-    numberOfBins = numberOfBins-1
+    numberOfBins = numberOfBins - 1 # subtract 1 because we are using deltaTime rather than bin edges
 
-    dta1 = shift(deltaTArray,1)
-    deltaTArray = deltaTArray[0:numberOfBins]
-    dta1 = dta1[0:numberOfBins]
-    sum1 = zeros((numberOfBins),dtype = 'float32')
-    sum2 = zeros((numberOfBins),dtype = 'float32')
-    sum3 = zeros((numberOfBins),dtype = 'float32')
-    pspec0 = zeros((numberOfBins),dtype = 'float32')
-    pspec = zeros((numberOfBins),dtype = 'float32') 
-    dpspec = zeros((numberOfBins),dtype = 'float32')
-    nterms = zeros((numberOfBins),dtype = 'float32')
-    min_dta = deltaTArray.max()
-    max_dta = 0.
-    #file_input = "00147478_bat_fine_wlc.txt"
-    """
-    00261664_bat_fine_wlc.txt
-    00116116_bat_fine_wlc.txt
-    00147478_bat_fine_wlc.txt
-    00148225_bat_fine_wlc.txt
-    00177408_bat_fine_wlc.txt
-    00202035_bat_fine_wlc.txt
-    00217805_bat_fine_wlc.txt
+
+    timeBinEnd: ndarray[float] = shift(
+        timeBinStart,1
+        ) # shift the deltaTime array by 1 to create the deltaTime1 array
     
-    """
-    #file_input = "00310219_bat_fine_wlc.txt"
-    #file_input = "00217805_bat_fine_wlc.txt"
-    cv_chi2 = loadtxt('/Users/Vahid/python_codes/chi2_criticVal.txt',dtype = 'float32')
-    dof = cv_chi2[:,0]
-    cv = cv_chi2[:,1]
+    # truncate the deltaTime and deltaTime1 arrays to the number of bins
+    timeBinStart = timeBinStart[0:numberOfBins]
+    timeBinEnd = timeBinEnd[0:numberOfBins]
+
+    # initialize arrays
+    binChi2Sum: ndarray[float] = zeros((numberOfBins),dtype = 'float32')
+    binAdjustedWeightSum: ndarray[float] = zeros((numberOfBins),dtype = 'float32')
+    binRawWeightSum: ndarray[float] = zeros((numberOfBins),dtype = 'float32')
+    noiseBaseline: ndarray[float] = zeros((numberOfBins),dtype = 'float32')
+    powerSpectrum: ndarray[float] = zeros((numberOfBins),dtype = 'float32') 
+    powerSpectrumError: ndarray[float] = zeros((numberOfBins),dtype = 'float32')
+    binTermCounts: ndarray[float] = zeros((numberOfBins),dtype = 'float32')
+
+    # define the minimum and maximum deltaTimeArray values
+    minimumDeltaTimeArray: float = timeBinStart.max()
+    maximumDeltaTimeArray: float = 0.0
+
+    # Load the lookup table for chi^2 critical values
+    chi2ThresholdLookup: ndarray[float] = loadtxt('/Users/Vahid/python_codes/chi2_criticVal.txt',dtype = 'float32')
+    degreesOfFreedom: ndarray[float] = chi2ThresholdLookup[:,0]
+    chi2CriticalValues: ndarray[float] = chi2ThresholdLookup[:,1]
     
-    DATA = loadtxt(file_input, dtype = float32)
+    # Load the data from the input file
+    DATA: ndarray[float] = loadtxt(inputFileName, dtype = float32)
+
+    # Check if the data is not empty
     if (DATA.size > 0):
-        t = DATA[:,0]; dt = DATA[:,1]; rate = DATA[:,2]; drate = DATA[:,3]
-        lrate = log(rate)
-        dlrate = drate/rate
+        time: ndarray[float] = DATA[:,0]
+        timeBinDurations: ndarray[float] = DATA[:,1]
+        rate: ndarray[float] = DATA[:,2]
+        deltaRate: ndarray[float] = DATA[:,3]
+        logRate: ndarray[float] = log(rate)
+        deltaLogRate: ndarray[float] = deltaRate/rate # propagate the error in log space
         
         # Denoising the data
-        lrate = haar_denoise.haar_denoise(lrate,dlrate)
-        #
-        
-        nrepl = 1 
-        dt00 = t.max()-t.min()
-        dt0 = dt ; t0 = t ; lrate0 = lrate ; dlrate0 = dlrate
-        for k in xrange(0,nrepl):
-            t = concatenate((t,t0+(k+1)*dt00)) ; dt = concatenate((dt,dt0))
-            lrate = concatenate((lrate,lrate0)) ; dlrate = concatenate((dlrate,dlrate0))
-        
-        # get the difference of every two points
-        resl = haar_nondec.haar_nondec(t,lrate,dlrate,16.)    
-        resl2 = asarray(resl)
-        # return delta_t,tav,wav,dwav0,dwav ***from IDL***
-        delta_t = resl2[0,:]; tav = resl2[1,:]
-        wav = resl2[2,:]; dwav0 = resl2[3,:]; dwav = resl2[4,:]
-        diff2 = wav**2 ; diff_var = dwav**2*(nrepl+1.)/binningFactor ; diff_var0 = dwav0**2
-        
-        for j in xrange(0,int(numberOfBins)):
-            h1 = where(delta_t >=  deltaTArray[j]); h2 = where((delta_t < dta1[j])*(diff_var > 0))
-            h11 = asarray(h1); h22 = asarray(h2)
-            h = intersect1d(h11,h22)
-            nh = size(h)
-            if (nh > 1):
-                sum1[j] = sum(diff2[h]/diff_var0[h])
-                sum2[j] = sum(1./diff_var[h])
-                sum3[j] = sum(1./diff_var0[h])
-                nterms[j] = nh
-                if (deltaTArray[j] < min_dta): min_dta = deltaTArray[j]
-                if (dta1[j] > max_dta): max_dta = dta1[j]
+        logRate: ndarray[float] = haar_denoise.haar_denoise(logRate,deltaLogRate)
         
         
-        
-        g1 = where(sum3 > 0); g = asarray(g1)
-        ng = size(g)
-        if (ng > 0):
-            pspec[g] = (sum1[g]/sum3[g])
-            pspec0[g] = nterms[g]/sum3[g]
-            dpspec[g] = sqrt(2.)/sqrt(sum2[g]*sum3[g]/nterms[g])
-        
-        
-        g = where((abs(pspec) < 2.*dpspec)*(dpspec > 0)) ;# g1 = asarray(g)
-        a = 1.
-        ng = size(g)
+        numberOfRepetitions: int = 1 
+        """^^^^^^
+        Technically, for a non-Haar wavelet transform, this would need to be L-1 where L is the length of the
+        wavelet filter. For the Haar wavelet, L = 2, so L-1 = 1. Therefore, we can set numberOfRepetitions = 1.
+        """
 
+        maximumTimeDifference: float = time.max()-time.min()
+
+        # make copies of the original time, deltaTime, logRate, and deltaLogRate arrays
+        deltaTimeCopy: ndarray[float] = timeBinDurations
+        timeCopy: ndarray[float] = time
+        logRateCopy: ndarray[float] = logRate
+        deltaLogRateCopy: ndarray[float] = deltaLogRate
+
+        # 
+        for k in range(0,numberOfRepetitions):
+            time = concatenate(
+                (time, timeCopy + (k+1) * maximumTimeDifference))
+            timeBinDurations = concatenate(
+                (timeBinDurations, deltaTimeCopy))
+            logRate = concatenate(
+                (logRate, logRateCopy))
+            deltaLogRate = concatenate(
+                (deltaLogRate, deltaLogRateCopy))
         
-        snr = 3.0
-        cts = sum1  #-nterms*a 
-        error = sqrt(sum3*2*nterms/((sum2<1.).choose(sum2,1))) ; dt = sum3
+        # perform the Haar non-decimated wavelet transform on the logRate and deltaLogRate arrays
+        waveletResults: tuple = haar_nondec.haar_nondec(
+            time,
+            logRate,
+            deltaLogRate,
+            16.0
+            )
+        """
+        The imputs for this function do not match the inputs for the haar_nondec function in haar_nondec.py.
+        The haar_nondec function in haar_nondec.py takes in a file path, number of bins, and two lists.
+        The variable names below are best guesses based on the context of the code.
+        """
+        waveletArray: ndarray[float] = asarray(waveletResults)
+
+        # extract physical quantities from the waveletArray
+        timeIntervals: ndarray[float] = waveletArray[0,:]
+        timeAverage: ndarray[float] = waveletArray[1,:]
+        haarCoefficients: ndarray[float] = waveletArray[2,:]
+        rawCoefficientError: ndarray[float] = waveletArray[3,:]
+        adjustedCoefficientError: ndarray[float] = waveletArray[4,:]
+
+        # calculate the power spectrum and its error
+        waveletPower: ndarray[float] = haarCoefficients**2
+        adjustedCoefficientVariance: ndarray[float] = adjustedCoefficientError**2*(numberOfRepetitions+1.0)/binningFactor
+        rawCoefficientVariance: ndarray[float] = rawCoefficientError**2
         
-        #rate_rebin,dta,dta1,dt,cts,error,snr,0,2.,0.,ii
-        rateRebin1 = rate_rebin.rate_rebin(deltaTArray,dta1,dt,cts,error,snr,0.,2.,0)
-        rateRebin = asarray(rateRebin1)
-        deltaTArray = rateRebin[0]; dta1 = rateRebin[1]; dt = rateRebin[2]
-        cts = rateRebin[3]; error = rateRebin[4]; index = rateRebin[5]
-        #
-        pspec = cts/((dt<1.).choose(dt,1)) ; dpspec = error/((dt<1.).choose(dt,1))
-        #do_rebin,sum3,ii
-        doRebin1 = do_rebin.do_rebin(sum3,index)
-        doRebin = asarray(doRebin1)
-        sum3 = doRebin
-        #do_rebin,nterms,ii
-        doRebin2 = do_rebin.do_rebin(nterms,index)
-        doRebin_nterms = asarray(doRebin2)
-        nterms = doRebin_nterms
+        """
+        Filter the Haar wavelet data into specific time-scale bins and aggregate their statistics.
+        For each time-scale bin, sum the Chi-squared test statistic and store the weighting factors
+        Track the minimum and maximum time-scale values encountered during the binning process.
+        """
+        for binIndex in range(0, int(numberOfBins)):
+            validLowerBound: ndarray[int] = where(
+                timeIntervals >=  timeBinStart[binIndex])
+            validUpperBound: ndarray[int] = where(
+                (timeIntervals < timeBinEnd[binIndex])
+                * (adjustedCoefficientVariance > 0))
+            matchingIndices: ndarray[int] = intersect1d(
+                validLowerBound,
+                validUpperBound)
+            numberOfMatchingPoints: int = size(matchingIndices)
+
+            if (numberOfMatchingPoints > 1):
+                # aggregate the Chi-squared statistics for the current time-scale bin
+                binChi2Sum[binIndex] = sum(
+                    waveletPower[matchingIndices] / rawCoefficientVariance[matchingIndices])
+                binAdjustedWeightSum[binIndex] = sum(
+                    1.0 / adjustedCoefficientVariance[matchingIndices])
+                binRawWeightSum[binIndex] = sum(
+                    1.0 / rawCoefficientVariance[matchingIndices])
+            
+                binTermCounts[binIndex] = numberOfMatchingPoints
+
+                if (timeBinStart[binIndex] < minimumDeltaTimeArray):
+                    minimumDeltaTimeArray = timeBinStart[binIndex]
+                if (timeBinEnd[binIndex] > maximumDeltaTimeArray):
+                    maximumDeltaTimeArray = timeBinEnd[binIndex]
         
-        pspec0  = a*nterms/((sum3<1.).choose(sum3,1))
-        cts = cts/((nterms<1.).choose(nterms,1))
-        #do_rebin,sum2,ii
-        doRebin_sum2 = do_rebin.do_rebin(sum2,index)
-        doRebin_sum2_2 = asarray(doRebin_sum2)
-        sum2_2 = doRebin_sum2_2
-        sum2_2 = sum2_2/((nterms<1.).choose(nterms,1))
         
-        nsig = snr
-        g0 = where((pspec > nsig*dpspec)*(dpspec>0))
-        ng0 = size(g0)
-        if (ng0>1):
-            g00 = where(dpspec > 0)
-            ng0 = size(g00)
-            all_t = 0.5*(deltaTArray[g00]+dta1[g00]); all_dt = 0.5*(dta1[g00]-deltaTArray[g00]) 
-            all_sig = pspec[g00]; all_err0 = dpspec[g00]
-            all_err_chk = (1.+2*cts[g00]) 
-            all_err = all_err0*sqrt(((all_err_chk<0).choose(all_err_chk,0))) #check for the argument being>0
-            all_sig0 = pspec0[g00]
-            sum2_2_2 = sum2_2[g00]
-            g1 = where(all_sig < nsig*all_err0)
-            ng = size(g1)
-            g2 = where(all_sig >=  nsig*all_err0)
-            ng2 = size(g2)
-            if (ng > 0): # check for the arguments >0
-                all_sig_chk = all_sig[g1]+nsig*all_err0[g1]       
-                all_sig[g1] = sqrt(((all_sig_chk<0).choose(all_sig_chk,0)))
-                all_err[g1] = 0.
+        
+        # find bins that actually have data points
+        validWeightIndices: ndarray[int] = where(binRawWeightSum > 0)
+        numberOfValidWeightBins: int = size(validWeightIndices)
+        if (numberOfValidWeightBins > 0):
+            # calculate the weighted power spectrum and the expected noise baseline
+            powerSpectrum[validWeightIndices] = (binChi2Sum[validWeightIndices]
+                                        / binRawWeightSum[validWeightIndices])
+            noiseBaseline[validWeightIndices] = (binTermCounts[validWeightIndices]
+                                        / binRawWeightSum[validWeightIndices])
+            
+            # calculate the statistical uncertainty of the power spectrum
+            weightedTermsRatio: ndarray[float] = (binAdjustedWeightSum[validWeightIndices]
+                                                * binRawWeightSum[validWeightIndices]
+                                                / binTermCounts[validWeightIndices])
+            powerSpectrumError[validWeightIndices] = (sqrt(2.0) / sqrt(weightedTermsRatio))
+
+        # identify bins where the power is statistically insignificant (less than 2 sigma)
+        insigninficantBins: ndarray[int] = where(
+            (abs(powerSpectrum) < 2.0 * powerSpectrumError) 
+            & (powerSpectrumError > 0))
+        numberOfInsignificantBins: int = size(insigninficantBins)
+
+        # setup variables for the rebinning process
+        targetSignalToNoiseRatio: float = 3.0
+        netVariabilitySignal: ndarray[float] = binChi2Sum  #-binTermCounts*1.0 
+
+        # Prevent division by zero by clipping adjusted weights to a minimum of 1.0
+        safeAdjustedWeights = clip(binAdjustedWeightSum, 1.0, None)
+        error: ndarray[float] = sqrt(
+            binRawWeightSum * 2.0 * binTermCounts / safeAdjustedWeights)
+        timeBinDurations = binRawWeightSum
+        
+
+
+
+
+        # adaptively merge bins to satisfy the target Signal-to-Noise ratio
+        rateRebin: tuple = rate_rebin.rate_rebin(
+            timeBinStart,
+            timeBinEnd,
+            timeBinDurations,
+            netVariabilitySignal,
+            error,
+            targetSignalToNoiseRatio,
+            0.0,
+            2.0,
+            0.0
+            )
+        rebinMatrix: ndarray[float] = asarray(rateRebin)
+
+        # Extract the new, merged bin configurations
+        rebinnedTimeBinStart: ndarray[float] = rebinMatrix[0]
+        rebinnedTimeBinEnd: ndarray[float] = rebinMatrix[1]
+        rebinnedTimeBinDurations: ndarray[float] = rebinMatrix[2]
+        rebinnedSignalSum: ndarray[float] = rebinMatrix[3]
+        rebinnedErrorSum: ndarray[float] = rebinMatrix[4]
+        rebinnedMappingIndex: ndarray[int] = rebinMatrix[5]
+
+        # calculate the normalised power specral density and its associated error
+        safeDurations = clip(rebinnedTimeBinDurations, 1.0, None)
+        powerSpectralDensity: ndarray[float] = rebinnedSignalSum / safeDurations
+        powerSpectralDensityError: ndarray[float] = rebinnedErrorSum / safeDurations
+        
+        # collapse the statistical metadata weights to match the new bin structures
+        rebinnedRawWeightSum: ndarray[float] = do_rebin.do_rebin(
+            binRawWeightSum,
+            rebinnedMappingIndex
+            )
+        rebinnedTermCounts: ndarray[float] = do_rebin.do_rebin(
+            binTermCounts,
+            rebinnedMappingIndex
+            )
+        rebinnedAdjustedWeightSum: ndarray[float] = do_rebin.do_rebin(
+            binAdjustedWeightSum,
+            rebinnedMappingIndex
+            )
+        
+        # final normalisation to calculate tracking means per term inside the new bins
+        safeTermCounts: ndarray[float] = clip(rebinnedTermCounts, 1.0, None)
+        safeRawWeights: ndarray[float] = clip(rebinnedRawWeightSum, 1.0, None)
+
+        meanNoiseBaseline: ndarray[float] = rebinnedTermCounts / safeRawWeights
+        meanVariabilitySignal: ndarray[float] = rebinnedSignalSum / safeTermCounts
+        meanAdjustedWeights: ndarray[float] = rebinnedAdjustedWeightSum / safeTermCounts
+
+        # rename for explicit statsitical context
+        significanceSigmaThreshold: float = targetSignalToNoiseRatio
+
+        # find indices where the power spectrum exceeds the 3-sigma confidence threshold
+        significantSingnalIndices: ndarray[int] = where(
+            (powerSpectralDensity > significanceSigmaThreshold * powerSpectralDensityError)
+            & (powerSpectralDensityError > 0))
+        
+        # count how many bins have significant signals
+        numberOfSignificantBins: int = size(significantSingnalIndices)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        if (numberOfSignificantBins>1):
+            g00: ndarray[int] = where(powerSpectralDensityError > 0)
+            numberOfSignificantBins: int = size(g00)
+            all_t: ndarray[float] = 0.5*(rebinnedTimeBinStart[g00]+rebinnedTimeBinEnd[g00])
+            all_dt: ndarray[float] = 0.5*(rebinnedTimeBinEnd[g00]-rebinnedTimeBinStart[g00]) 
+            all_sig: ndarray[float] = powerSpectralDensity[g00]
+            all_err0: ndarray[float] = powerSpectralDensityError[g00]
+            all_err_chk: ndarray[float] = (1.+2*rebinnedSignalSum[g00]) 
+            all_err: ndarray[float] = all_err0*sqrt(((all_err_chk<0).choose(all_err_chk,0))) #check for the argument being>0
+            all_sig0: ndarray[float] = noiseBaseline[g00]
+            sum2_2_2: ndarray[float] = meanAdjustedWeights[g00]
+            validWeightIndices: ndarray[int] = where(all_sig < significanceSigmaThreshold*all_err0)
+            numberOfInsignificantBins: int = size(validWeightIndices)
+            g2: ndarray[int] = where(all_sig >=  significanceSigmaThreshold*all_err0)
+            ng2: int = size(g2)
+            if (numberOfInsignificantBins > 0): # check for the arguments >0
+                all_sig_chk: ndarray[float] = all_sig[validWeightIndices]+significanceSigmaThreshold*all_err0[validWeightIndices]       
+                all_sig[validWeightIndices] = sqrt(((all_sig_chk<0).choose(all_sig_chk,0)))
+                all_err[validWeightIndices] = 0.
                 
             if (ng2 > 0):
                 # fitting mu_0 using chi2 minimization!
-                pspec_p = all_sig[g2]
-                dpspec_p = all_err[g2]
-                tau_time = all_t[g2]
-                sum22 = sum2_2_2[g2]
+                pspec_p: ndarray[float] = all_sig[g2]
+                dpspec_p: ndarray[float] = all_err[g2]
+                tau_time: ndarray[float] = all_t[g2]
+                sum22: ndarray[float] = sum2_2_2[g2]
                 #
                 #        
                 all_sig[g2] = sqrt(all_sig[g2])
                 #all_err[g2] = 0.5*all_err[g2]/sqrt(all_sig0[g2])
                 all_err[g2] = 0.5*all_err[g2]/sqrt( all_sig[g2] )
                 #
-                miny = min(all_sig[g2])/2.
+                miny: float = min(all_sig[g2])/2.
                 ##subplot(111, xscale = "log", yscale = "log")
                 #axis = [min_dta/2.,max_dta*2., miny,max(append(all_sig([g2],1.)))*2]
                 #errorbar(all_t, all_sig, all_dt, all_err,'r.-')
@@ -192,7 +334,7 @@ def haar2_power_mod2a_Zach_denoising(file_input):
                 ax.set_yscale("log", nonposy = 'clip')
                 plt.errorbar(all_t, all_sig, xerr = all_dt, yerr = all_err, fmt = '.k')
                 ax.set_xlim((min_dta/2.,max_dta*2.))
-                maxy = max(append(all_sig[g2],1.))*2
+                maxy: float = max(append(all_sig[g2],1.))*2
                 ax.set_ylim((miny, maxy))
                 ax.set_title('Title')
                 ax.set_xlabel(r'$\mathrm{\Delta T}$  [s]', fontsize = 12)
@@ -202,7 +344,7 @@ def haar2_power_mod2a_Zach_denoising(file_input):
                 #        ha = 'left', va = 'bottom')
                 #plt.show()
                 #       
-                xx = array([1.e-9,1.e9])
+                xx: ndarray[float] = array([1.e-9,1.e9])
                 for i in xrange(int(log10(min_dt)*2.-4.), int(log10(max_dt)*2)):
                     plt.plot(xx, miny*xx*exp(-i*log(10.)/2.),'c:', markersize = 6)
                 #
@@ -228,12 +370,12 @@ def haar2_power_mod2a_Zach_denoising(file_input):
                 #
                 #prnt_chi2 = file_input+'  : '+str(CHI2)
                 #text_file2.write("%s,\n"%prnt_chi2)
-                prnt_chi3 = file_input
+                prnt_chi3: str = inputFileName
                 text_file3.write("%s\n"%prnt_chi3)
                 text_file2.write("%s,\n"%str(CHI2))
-                prnt_tauMIN = file_input+':'+str(tau_time[0])
+                prnt_tauMIN: str = inputFileName+':'+str(tau_time[0])
                 text_file4.write("%s\n"%prnt_tauMIN)
-                prnt_tauArray = file_input+':'+str(tau_time)
+                prnt_tauArray: str = inputFileName+':'+str(tau_time)
                 text_file5.write("%s,\n"%prnt_tauArray)
                 
                 ####plt.figure(2)
@@ -262,10 +404,10 @@ def haar2_power_mod2a_Zach_denoising(file_input):
                     t_cross = 'NA'
                 """
                             
-                wh_cv = where(CHI2 <=  cv[:size(CHI2)])
+                wh_cv = where(CHI2 <=  chi2CriticalValues[:size(CHI2)])
                 if (size(wh_cv) > 0):
                     ref = arange(size(wh_cv))
-                    prnt_cvSize = file_input+':'+str(size(wh_cv))
+                    prnt_cvSize: str = inputFileName+':'+str(size(wh_cv))
                     text_file6.write("%s\n"%prnt_cvSize)
                     diff_ref = wh_cv - ref
                     wh_ref = where(diff_ref[0] !=  0)
@@ -292,7 +434,7 @@ def haar2_power_mod2a_Zach_denoising(file_input):
                         if (sigma2_cl2.size  ==  0):
                             t_min = tau3_time[-1]
                             #prnt = file_input+'  : '+str(t_min)+'     D     '+str(chi2_diffTest[-1])
-                            prnt = file_input+':'+str(t_min)+'  '+str(CHI2[-1]/(CHI2.size-1))+'  '+str(CHI2[-1])+'  '+str(CHI2.size-1)+' -1 '+str(chi2_diffTest[-1])
+                            prnt: str = inputFileName+':'+str(t_min)+'  '+str(CHI2[-1]/(CHI2.size-1))+'  '+str(CHI2[-1])+'  '+str(CHI2.size-1)+' -1 '+str(chi2_diffTest[-1])
                             text_file1.write("%s\n"%prnt)
                         else:
                             sigma2_indx = sigma2_cl2[0]
@@ -303,12 +445,12 @@ def haar2_power_mod2a_Zach_denoising(file_input):
                                 t_2 = tau3_time[sigma2_indx]
                                 t_min = (thrshld-y_2)/(y_2-y_1)*(t_2-t_1)+t_2
                                 CHI2_0_dof = CHI2[sigma2_indx]/(sigma2_indx)
-                                prnt = file_input+':'+str(t_min)+'  '+str(CHI2_0_dof)+'  '+str(CHI2[sigma2_indx])+'  '+str(sigma2_indx)+' 0 '+' 0 '
+                                prnt: str = inputFileName+':'+str(t_min)+'  '+str(CHI2_0_dof)+'  '+str(CHI2[sigma2_indx])+'  '+str(sigma2_indx)+' 0 '+' 0 '
                                 #prnt = file_input+'  : '+str(t_min)
                                 text_file1.write("%s\n"%prnt)
                             else:
                                 t_min = tau3_time[sigma2_indx]
-                                prnt = file_input+':'+str(t_min)+'  '+str(CHI2[0])+'  '+' 0 '+'   ' +' 0 '+'  1  '+str(chi2_diffTest[0])
+                                prnt: str = inputFileName+':'+str(t_min)+'  '+str(CHI2[0])+'  '+' 0 '+'   ' +' 0 '+'  1  '+str(chi2_diffTest[0])
                                 #prnt = file_input+'  : '+str(t_min)+'     U    '+str(chi2_diffTest[0])
                                 text_file1.write("%s\n"%prnt)
                                 

@@ -36,16 +36,22 @@ class MonteCarloUncertainty:
         self.__denoisedDataArgs: dict = denoisedDataArgs
         self.__numSimulations: int = numSimulations
         self.__maximumSyntheticLightCurves: int = min(100, numSimulations) if not highRAMSystem else min(10000, numSimulations)
-        self.__preBustSTD: float = std(data.preBurstData['rate'].to_numpy())
+        self.__preBurstSTD: float = std(data.preBurstData['rate'].to_numpy())
         print("Denoising the light curve data...")
         self.__poissonMean: ndarray = haarDenoise(
-            self.__data,
+            self.__data.burstData,
+            **self.__denoisedDataArgs
+            )
+        self.__preBurstPoissonMean: float = haarDenoise(
+            self.__data.preBurstData,
             **self.__denoisedDataArgs
             )
         self.__lengthOfCurve: int = len(self.__poissonMean)
         self.__std: ndarray = self.__calculateUncertainty()
-        data.burstData['error'] = self.__std
+        
+        data.burstData['monteCarloError'] = self.__std
         data.burstData['denoisedRate'] = self.__poissonMean
+        data.preBurstData['denoisedRate'] = self.__preBurstPoissonMean
 
 
     def __generateSyntheticLightCurves(
@@ -67,7 +73,7 @@ class MonteCarloUncertainty:
         
         gaussianNoise: ndarray = randomGenerator.normal(
             loc = 0,
-            scale = self.__preBustSTD,
+            scale = self.__preBurstSTD,
             size = arrayShape
         )
         
@@ -156,7 +162,7 @@ class MonteCarloUncertainty:
             ) -> ndarray:
         syntheticData: LightCurveData = self.__makeSyntheticData(syntheticRate)
         return haarDenoise(
-            syntheticData,
+            syntheticData.burstData,
             **self.__denoisedDataArgs
         )
 

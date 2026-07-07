@@ -168,6 +168,7 @@ if __name__ == "__main__":
             data: LightCurveData
             ) -> None:
 
+            print(f"Length of rebinned data: {len(data.rebinnedData)}")
 
             plt.figure(figsize=(10, 8))
             plt.plot(
@@ -184,7 +185,16 @@ if __name__ == "__main__":
 
         grbName: str = "GRB080319B"
         data: LightCurveData = LightCurveData(grbName)
-        data.burstData['denoisedRate'] = haarDenoise(data, thresholdMethod = thresholdMethod, thresholdScaleFactor = thresholdScaleFactor)
+        data.burstData['denoisedRate'] = haarDenoise(
+            data.burstData,
+            thresholdMethod = thresholdMethod,
+            thresholdScaleFactor = thresholdScaleFactor
+            )
+        data.preBurstData['denoisedRate'] = haarDenoise(
+            data.preBurstData,
+            thresholdMethod = thresholdMethod,
+            thresholdScaleFactor = thresholdScaleFactor
+        )
         # swiftBAT test
         rebinLightCurve(data, "swiftBAT", 5.0)
         plotlightCurve(data)

@@ -9,12 +9,13 @@ class HaarCoefficient
 {
     public:
         // data members
-        std::vector<double> rate;
-        std::vector<double> time;
-        std::vector<double> rateErr;
-        std::vector<double> timeInBins;
+        const std::vector<double>& rate;
+        const std::vector<double>& time;
+        const std::vector<double>& rateErr;
+        const std::vector<double>& timeInBins;
         int lengthOfData;
         std::vector<int> scaleSet;
+        int shiftOffset;
         double deltaT;
         double coefficientValue;
         double coefficientVariance;
@@ -33,12 +34,13 @@ class HaarCoefficient
          */
         HaarCoefficient
         (
-            std::vector<double> rate,
-            std::vector<double> time,
-            std::vector<double> rateErr,
-            std::vector<double> timeInBins,
+            const std::vector<double>& rate,
+            const std::vector<double>& time,
+            const std::vector<double>& rateErr,
+            const std::vector<double>& timeInBins,
             int lengthOfData,
-            std::vector<int> scaleSet
+            std::vector<int> scaleSet,
+            int shiftOffset
         );
 
 

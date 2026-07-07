@@ -14,11 +14,13 @@ PermuteAnalysis::PermuteAnalysis
     double *timeArray,
     double *rateErrArray,
     int lenghtOfData,
-    int numberOfTimeBins
+    int numberOfTimeBins,
+    int permutationStep
 )
 {
     this->lengthOfData = lenghtOfData;
     this->numberOfTimeBins = numberOfTimeBins;
+    this->permutationStep = std::max(1, permutationStep);
     this->rate.reserve(lenghtOfData);
     this->time.reserve(lenghtOfData);
     this->rateErr.reserve(lenghtOfData);
@@ -36,7 +38,7 @@ PermuteAnalysis::PermuteAnalysis
     this->powerSetSums.assign(numberOfTimeBins, 0.0);
     this->powerSetSumSquares.assign(numberOfTimeBins, 0.0);
     this->powerSetCounts.assign(numberOfTimeBins, 0);
-    this->totalPermutations = lengthOfData;    
+    this->totalPermutations = (lengthOfData + this->permutationStep - 1) / this->permutationStep;
 }
 
 
@@ -130,6 +132,10 @@ void PermuteAnalysis::generateOutputBins()
 void PermuteAnalysis::getTimeInBins()
 {
     timeInBins.clear();
+    if (lengthOfData < 2)
+    {
+        return;
+    }
     timeInBins.reserve(lengthOfData - 1);
     for (int i = 0; i < lengthOfData - 1; i++)
     {
@@ -139,32 +145,13 @@ void PermuteAnalysis::getTimeInBins()
 
 
 
-std::vector<std::vector<double>> PermuteAnalysis::shiftData
-(
-    int index
-)
-{
-    std::vector<double> permutedRate;
-    std::vector<double> permutedSigma;
-    for (int i = 0; i < lengthOfData; i++)
-    {
-        int permutedIndex = (i + index) % lengthOfData;
-        permutedRate.push_back(rate[permutedIndex]);
-        permutedSigma.push_back(rateErr[permutedIndex]);
-    }
-    return {permutedRate, permutedSigma};
-}
-
-
 std::vector<std::vector<double>> PermuteAnalysis::analysePermutation
 (
     int index
 )
 {
-    /// generate a permutation of the dataset based on the given index
-    std::vector<std::vector<double>> permutedData = shiftData(index);
     /// run the MVTAnalysis on the permuted dataset
-    HaarCoefficient haarCoefficient(permutedData[0], time, permutedData[1], timeInBins, lengthOfData, kSet);
+    HaarCoefficient haarCoefficient(rate, time, rateErr, timeInBins, lengthOfData, kSet, index);
     return haarCoefficient.results;
 }
 
@@ -188,23 +175,10 @@ void PermuteAnalysis::binResults
         {
             if (logTauIJ >= logBinEdges[j] && logTauIJ < logBinEdges[j + 1])
             {
-                /// check if this is a burst or pre-burst analysis
-                if (!burst)
-                {
-                    powerSums[j] += power;
-                    powerSumSquares[j] += power * power;
-                    powerCounts[j] += 1;
-                }
-                else
-                {
-                 /// only add the power value to the bin if it is greater than 3 times the pre-burst standard deviation 
-                    if (power > 3 * preBurstPowerSetStdDev[j])
-                    {
-                        powerSums[j] += power;
-                        powerSumSquares[j] += power * power;
-                        powerCounts[j] += 1;
-                    }
-                }
+                // bin found, add the power value to the corresponding bin
+                powerSums[j] += power;
+                powerSumSquares[j] += power * power;
+                powerCounts[j] += 1;
                 break;
             }
         }
@@ -268,7 +242,7 @@ void PermuteAnalysis::runMVTAnalysisOnPermutations()
         std::vector<int> localPowerCounts(numberOfTimeBins, 0);
 
         #pragma omp for schedule(dynamic)
-        for (int shiftIndex = 0; shiftIndex < lengthOfData; shiftIndex++)
+        for (int shiftIndex = 0; shiftIndex < lengthOfData; shiftIndex += permutationStep)
         {
             std::vector<std::vector<double>> permutationResults = analysePermutation(shiftIndex);
             binResults(permutationResults, localPowerSums, localPowerSumSquares, localPowerCounts);

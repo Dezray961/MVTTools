@@ -54,12 +54,27 @@ class analyseLightCurve:
         if timeWindow is not None:
             self.__timeWindow = timeWindow
             self.__windowData()
-        self.__rebinnedData = self.__data.rebinnedData
+        self.__rebinnedData = self.__data.rebinnedData.copy() # extract the rebinned data from the LightCurveData object
         self.__numberOfTimeBins = numberOfTimeBins
+        # keep only valid bins before building the ctypes buffers
+        validDataMask = np.isfinite(self.__rebinnedData['time'].to_numpy())
+        validDataMask &= np.isfinite(self.__rebinnedData['rate'].to_numpy())
+        validDataMask &= np.isfinite(self.__rebinnedData['error'].to_numpy())
+        validDataMask &= self.__rebinnedData['rate'].to_numpy() > 0.0
+        self.__rebinnedData = self.__rebinnedData.loc[validDataMask].copy()
         self.__lengthOfData = len(self.__rebinnedData)
-        self.__rebinnedData['logRate'] = np.log(self.__rebinnedData['rate'].to_numpy())
-        self.__rebinnedData['logRateErrorSquared'] = (self.__rebinnedData['error'].to_numpy() / self.__rebinnedData['rate'].to_numpy())**2
+        targetPermutationCount = max(256, self.__numberOfTimeBins * 8)
+        self.__permutationStep = max(1, self.__lengthOfData // targetPermutationCount)
+        if self.__lengthOfData < 2:
+            raise ValueError("rebinned light curve must contain at least two positive-rate bins before MVT analysis")
+        # get the log of the rate and the propagated log-rate variance for each time bin
+        rateArray = self.__rebinnedData['rate'].to_numpy(dtype=np.double, copy=False)
+        errorArray = self.__rebinnedData['error'].to_numpy(dtype=np.double, copy=False)
+        self.__rebinnedData['logRate'] = np.log(rateArray)
+        self.__rebinnedData['logRateErrorSquared'] = (errorArray / rateArray)**2
+        # call the C++ wrapper to set up the analysis
         self.cWrapper()
+        # run the analysis
         self.runAnalysis()
 
 
@@ -87,6 +102,7 @@ class analyseLightCurve:
             ctypes.POINTER(ctypes.c_double),
             ctypes.POINTER(ctypes.c_double),
             ctypes.POINTER(ctypes.c_double),
+            ctypes.c_int,
             ctypes.c_int,
             ctypes.c_int
         ]
@@ -116,12 +132,15 @@ class analyseLightCurve:
     def runAnalysis(
             self
             ) -> None:
+        if self.__lengthOfData < 2:
+            raise ValueError("rebinned light curve must contain at least two positive-rate bins before MVT analysis")
         self.analysis = self.lib.allocatePermuteAnalysis(
             self.__rebinnedData['logRate'].to_numpy(dtype=np.double, copy=False).ctypes.data_as(ctypes.POINTER(ctypes.c_double)),
             self.__rebinnedData['time'].to_numpy(dtype=np.double, copy=False).ctypes.data_as(ctypes.POINTER(ctypes.c_double)),
             self.__rebinnedData['logRateErrorSquared'].to_numpy(dtype=np.double, copy=False).ctypes.data_as(ctypes.POINTER(ctypes.c_double)),
             self.__lengthOfData,
-            ctypes.c_int(self.__numberOfTimeBins)
+            ctypes.c_int(self.__numberOfTimeBins),
+            ctypes.c_int(self.__permutationStep)
         )
 
         worker = Thread(target=self.lib.runPermuteAnalysis, args=(self.analysis,))
@@ -218,52 +237,62 @@ class analyseLightCurve:
 
 
 # class to analyse the light curves for pre-burst and burst data for a given GRB.
-#class analyseGRB:
-#    def __init__(
-#            self,
-#            GRBName: str,
-#            numberOfTimeBins: int = 64
-#            ) -> None:
-#        self.GRBName: str = GRBName
-#        self.__numberOfTimeBins: int = numberOfTimeBins
-#        self.preBurstAnalysis: analyseLightCurve = analyseLightCurve(
-#            self.GRBName,
-#            segment="pre-burst",
-#            numberOfTimeBins=self.__numberOfTimeBins,
-#            )
-#        self.burstAnalysis: analyseLightCurve = analyseLightCurve(
-#            self.GRBName,
-#            segment="burst",
-#            numberOfTimeBins=self.__numberOfTimeBins,
-#            preBurstPowerSetStdDevs=self.preBurstAnalysis.powerSetStdDevs
-#            )
-#        self.logBinEdges: np.ndarray = self.burstAnalysis.logBinEdges
-#        self.logBinCentres: np.ndarray = self.burstAnalysis.logBinCentres
-#        self.powerSetAverages: np.ndarray = self.burstAnalysis.powerSetAverages - self.preBurstAnalysis.powerSetAverages
-#
-#    # method to filter the values that are less than 3σ from the background
-#    def filterValues(
-#            self
-#            ) -> None:
-#        pass
-#
-#    def plotVTvsDeltaT(
-#            self
-#            ) -> None:
-#        fig, ax = plt.subplots()
-#        ax.errorbar(
-#            10**self.logBinCentres,
-#            self.powerSetAverages,
-##            xerr=self.burstAnalysis.timeBinUncertaintyArray,
-#            ls='none',
-#            marker='x',
-#            color='blue')
-#        ax.set_ylabel('VT')
-#        ax.set_yscale('log')
-#        ax.set_xscale('log')
-#        ax.set_xlabel('$\\Delta t$')
-#        plt.savefig(f"data/processed/{self.GRBName}/{self.GRBName}VTvsDeltaT.png", dpi=300)
-#        plt.show()
+class analyseGRB:
+    def __init__(
+            self,
+            GRBName: str,
+            numberOfTimeBins: int = 64,
+            timeWindow: tuple[int, int] = None
+            ) -> None:
+        self.GRBName: str = GRBName
+        self.__numberOfTimeBins: int = numberOfTimeBins
+        self.__timeWindow: tuple[int, int] = timeWindow
+        self.data: LightCurveData = LightCurveData(GRBName)
+        MonteCarloUncertainty(
+            data = self.data,
+            denoisedDataArgs = {
+                "thresholdMethod": "hard",
+                "thresholdScaleFactor": 0.5
+            },
+            numSimulations = 100,
+            highRAMSystem = False
+        )
+        rebinLightCurve(self.data,
+                        instrument = "swiftBAT",
+                        snrThreshold = 5.0
+                        )
+        self.burstAnalysis: analyseLightCurve = analyseLightCurve(
+            data = self.data,
+            numberOfTimeBins = self.__numberOfTimeBins,
+            timeWindow = self.__timeWindow
+        )
+        self.logBinEdges: np.ndarray = self.burstAnalysis.logBinEdges
+        self.logBinCentres: np.ndarray = self.burstAnalysis.logBinCentres
+        self.powerSetAverages: np.ndarray = self.burstAnalysis.powerSetAverages
+
+    # method to filter the values that are less than 3σ from the background
+    def filterValues(
+            self
+            ) -> None:
+        pass
+
+    def plotVTvsDeltaT(
+            self
+            ) -> None:
+        fig, ax = plt.subplots()
+        ax.errorbar(
+            10**self.logBinCentres,
+            self.powerSetAverages,
+#            xerr=self.burstAnalysis.timeBinUncertaintyArray,
+            ls='none',
+            marker='x',
+            color='blue')
+        ax.set_ylabel('VT')
+        ax.set_yscale('log')
+        ax.set_xscale('log')
+        ax.set_xlabel('$\\Delta t$')
+        plt.savefig(f"data/processed/{self.GRBName}/{self.GRBName}VTvsDeltaT.png", dpi=300)
+        plt.show()
 
 
 
@@ -287,22 +316,5 @@ if __name__ == "__main__":
     
     # run the analysis on a specific GRB
     grbName: str = "GRB080319B"
-    data: LightCurveData = LightCurveData(grbName)
-    MonteCarloUncertainty(
-        data = data,
-        denoisedDataArgs = {
-            "thresholdMethod": "hard",
-            "thresholdScaleFactor": 0.5
-        },
-        numSimulations = 100,
-        highRAMSystem = False
-    )
-    rebinLightCurve(data,
-                    instrument = "swiftBAT",
-                    snrThreshold = 5.0
-                    )
-    analyseLightCurveObj: analyseLightCurve = analyseLightCurve(
-        data = data,
-        numberOfTimeBins = 64
-    )
+    analysis = analyseGRB(grbName, numberOfTimeBins=64)
 

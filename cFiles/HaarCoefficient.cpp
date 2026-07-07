@@ -1,27 +1,31 @@
-#include <vector>
-#include <math.h>
-#include <numeric>
-#include <algorithm>
-#include "HaarCoefficient.hpp"
+#include <vector> // dynamic arrays
+#include <math.h> // mathematical functions
+#include <numeric> // for std::accumulate
+#include <algorithm> // for std::max
+#include "HaarCoefficient.hpp" // include the header file for the HaarCoefficient class
+
+#include <stdio.h> // for printf debugging
 
 
 HaarCoefficient::HaarCoefficient
 (
-    std::vector<double> rate,
-    std::vector<double> time,
-    std::vector<double> rateErr,
-    std::vector<double> timeInBins,
+    const std::vector<double>& rate,
+    const std::vector<double>& time,
+    const std::vector<double>& rateErr,
+    const std::vector<double>& timeInBins,
     int lengthOfData,
-    std::vector<int> scaleSet
+    std::vector<int> scaleSet,
+    int shiftOffset
 )
+    : rate(rate),
+      time(time),
+      rateErr(rateErr),
+      timeInBins(timeInBins)
 {
     // initialize the data members with the provided arguments
-    this->rate = rate;
-    this->time = time;
-    this->rateErr = rateErr;
-    this->timeInBins = timeInBins;
     this->lengthOfData = lengthOfData;
     this->scaleSet = scaleSet;
+    this->shiftOffset = shiftOffset;
     // reserve space for the results vector
     results.reserve(lengthOfData * std::max<std::size_t>(1, scaleSet.size()));
     // calculate the Haar coefficients and store the results
@@ -46,11 +50,17 @@ double HaarCoefficient::findCoefficient
     int halfBlockSize
 )
 {
-    auto leftBegin = rate.begin() + startIndex;
-    auto rightBegin = leftBegin + halfBlockSize;
-    auto rightEnd = rightBegin + halfBlockSize;
-    double leftMean = std::accumulate(leftBegin, rightBegin, 0.0) / halfBlockSize;
-    double rightMean = std::accumulate(rightBegin, rightEnd, 0.0) / halfBlockSize;
+    double leftMean = 0.0;
+    double rightMean = 0.0;
+    for (int i = 0; i < halfBlockSize; i++)
+    {
+        int leftIndex = (startIndex + i + shiftOffset) % lengthOfData;
+        int rightIndex = (startIndex + halfBlockSize + i + shiftOffset) % lengthOfData;
+        leftMean += rate[leftIndex];
+        rightMean += rate[rightIndex];
+    }
+    leftMean /= halfBlockSize;
+    rightMean /= halfBlockSize;
     return rightMean - leftMean;
 }
 
@@ -61,11 +71,17 @@ double HaarCoefficient::findCoefficientVariance
     int halfBlockSize
 )
 {
-    auto leftBegin = rateErr.begin() + startIndex;
-    auto rightBegin = leftBegin + halfBlockSize;
-    auto rightEnd = rightBegin + halfBlockSize;
-    double leftVariance = std::accumulate(leftBegin, rightBegin, 0.0) / (halfBlockSize * halfBlockSize);
-    double rightVariance = std::accumulate(rightBegin, rightEnd, 0.0) / (halfBlockSize * halfBlockSize);
+    double leftVariance = 0.0;
+    double rightVariance = 0.0;
+    for (int i = 0; i < halfBlockSize; i++)
+    {
+        int leftIndex = (startIndex + i + shiftOffset) % lengthOfData;
+        int rightIndex = (startIndex + halfBlockSize + i + shiftOffset) % lengthOfData;
+        leftVariance += rateErr[leftIndex];
+        rightVariance += rateErr[rightIndex];
+    }
+    leftVariance /= (halfBlockSize * halfBlockSize);
+    rightVariance /= (halfBlockSize * halfBlockSize);
     return leftVariance + rightVariance;
 }
 
@@ -118,7 +134,7 @@ void HaarCoefficient::findHaarCoefficients()
             double power = convertCoefficientToPower(coefficientValue, variance);
             double logTauIJ = log10(tauIJ(blockSize, index));
             /// store the results in the results vector
-            results.push_back({logTauIJ, power});
+            results.emplace_back(std::initializer_list<double>{logTauIJ, power});
         }
     }
 }    

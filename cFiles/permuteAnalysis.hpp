@@ -33,7 +33,8 @@ class PermuteAnalysis
             double *timeArray,
             double *rateErrArray,
             int lenghtOfData,
-            int numberOfTimeBins
+            int numberOfTimeBins,
+            int permutationStep
         );
 
         void runAnalysis();
@@ -53,6 +54,7 @@ class PermuteAnalysis
         std::vector<double> timeInBins;
         int lengthOfData;
         int numberOfTimeBins;
+        int permutationStep = 1;
         int kMax = 0;
         std::vector<int> kSet;
         int kSetSize = 0;
@@ -62,8 +64,6 @@ class PermuteAnalysis
         std::atomic<int> permutationsCompleted{0};
         int totalPermutations = 0;
         std::atomic<bool> analysisComplete{false};
-        std::vector<double> preBurstPowerSetStdDev;
-        bool burst;
 
 
         // private member functions

@@ -21,7 +21,8 @@ extern "C" {
         double *time,
         double *rateErr,
         int lenghtOfData,
-        int numberOfTimeBins
+        int numberOfTimeBins,
+        int permutationStep
     )
     {
         return new PermuteAnalysis
@@ -30,7 +31,8 @@ extern "C" {
             time,
             rateErr,
             lenghtOfData,
-            numberOfTimeBins
+            numberOfTimeBins,
+            permutationStep
         );
     }
 

@@ -7,6 +7,12 @@ Look into the uncertainty after denoising                                       
     Parametric Monte Carlo uncertainty propagation is the answer?               ✅
 Make a script to impliment the MC method                                        ✅
 Make or adapt old script that can find the undecimated Haar Wavelet transform
+    HaarCoefficient.cpp                                                         ✅
+    HaarCoefficient.hpp                                                         ✅
+    permuteAnalysis.cpp
+    permuteAnalysis.hpp
+    findMVT.cpp
+    findMVT.py
 Make a script that can:
     fit a straight line to the start of the Haar coefficients
     perform a Δχ² test on the Haar coefficients and the straight line
@@ -32,6 +38,8 @@ Set up VPN on desktop
 
 
 Work out how to actually calculate the MVT from the data rather than by eye.
+
+
 
 
 

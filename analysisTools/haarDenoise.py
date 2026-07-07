@@ -1,4 +1,5 @@
 from numpy import ndarray, log, mean, floor, log2, sign, cumsum, sqrt, maximum, where, asarray
+from pandas import DataFrame
 from analysisTools.importLightCurve import LightCurveData
 from analysisTools.pyramidsDWTs import MODWT, inverseMODWT
 from tqdm import tqdm
@@ -6,21 +7,21 @@ from tqdm import tqdm
 
 
 def haarDenoise(
-        data: LightCurveData,
+        data: DataFrame,
         thresholdMethod: str = "soft",
         backgroundNoiseModel: str = "poisson",
         thresholdScaleFactor: float = 0.5
         ) -> ndarray:
-    """Denoises the light curve data using the Haar wavelet transform and thresholding. The denoised data is added to the LightCurveData object as a new column.
+    """Denoises a light curve dataframe using the Haar wavelet transform and thresholding.
 
     Args:
-        data (LightCurveData): light curve data to denoise
+        data (DataFrame): light curve dataframe to denoise. The dataframe must contain ``rate`` and ``totcounts`` columns.
         thresholdMethod (str, optional): thresholding method to use. Defaults to "soft". Options are "soft" and "hard". 
         backgroundNoiseModel (str, optional): background noise model to use. Defaults to "poisson". Options are "poisson" and "gaussian".
         thresholdScaleFactor (float, optional): factor to scale the threshold value. Defaults to 0.5. The rationale for this is that any noise that is left in should be small enough to not affect the MVT calculation. Whereas, if the threshold is too high, the MVT calculation will be affected by the loss of signal. This is a trade-off between noise and signal loss.
 
     Returns:
-        LightCurveData: light curve data with denoised data added as a new column
+        ndarray: denoised rate values
     """
     def thresholdPoisson(
             level: int,
@@ -40,7 +41,8 @@ def haarDenoise(
         n_l: int = 2 ** (maxLevel - level)
         prefactor: float = 2 ** (-0.5 * (level + 2))
         firstLogTerm: float = log(n_l)
-        secondLogTerm: float = log(n_l * meanRate)
+        safeMeanRate: float = max(meanRate, 1e-12)
+        secondLogTerm: float = log(n_l * safeMeanRate)
         sqrtTerm: float = max((((4 * firstLogTerm) ** 2) + (8 * secondLogTerm)), 0) # max with 0 to avoid complex numbers
         thresholdValue: float = prefactor * (2 * firstLogTerm + sqrtTerm ** 0.5)
         return thresholdValue
@@ -65,19 +67,19 @@ def haarDenoise(
 
 
     def findPoissonRate(
-            data: LightCurveData,
+            data: DataFrame,
             binSize: int
             ) -> float:
         """Finds the mean rate of the pre-burst data for a given bin size.
 
         Args:
-            data (LightCurveData): light curve data
+            data (DataFrame): light curve data
             binSize (int): size of the bins in indices.
 
         Returns:
             float: mean rate of the pre-burst data
         """
-        preBurstCounts: ndarray = data.burstData['totcounts'].to_numpy()
+        preBurstCounts: ndarray = data['totcounts'].to_numpy()
         timeInBin: float = 100e-6 * binSize
         # moving window sum
         cumulativeCounts: ndarray = cumsum(preBurstCounts)
@@ -86,7 +88,7 @@ def haarDenoise(
         return meanRate
 
 
-    burstData: list[float] = data.burstData['rate'].to_list()
+    burstData: list[float] = data['rate'].to_list()
 
     maxLevel: int = int(floor(log2(len(burstData)))) - 1
 
@@ -133,20 +135,20 @@ def haarDenoise(
 
 if __name__ == "__main__":
     def plotlightCurve(
-        data: LightCurveData
+        data: DataFrame
         ) -> None:
         import matplotlib.pyplot as plt
 
 
         plt.figure(figsize=(10, 6))
         plt.plot(
-            data.burstData['time'],
-            data.burstData['rate'],
+            data['time'],
+            data['rate'],
             label='Original Data'
             )
         plt.plot(
-            data.burstData['time'],
-            data.burstData['denoisedRate'],
+            data['time'],
+            data['denoisedRate'],
             label='Denoised Data',
             color='red',
             alpha=0.5
@@ -158,5 +160,6 @@ if __name__ == "__main__":
 
 
     data: LightCurveData = LightCurveData("GRB080319B")
-    data.burstData['denoisedRate'] = haarDenoise(data)
-    plotlightCurve(data)
+    data.burstData['denoisedRate'] = haarDenoise(data.burstData)
+    data.preBurstData['denoisedRate'] = haarDenoise(data.preBurstData)
+    plotlightCurve(data.burstData)

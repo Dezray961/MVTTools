@@ -1,14 +1,17 @@
 
 from numpy import *
-import haar_nondec
-import rate_rebin
-import do_rebin
-import haar_denoise            # Calling the haar_denoising modules
+import haar_nondec              # non-decimated Haar wavelet transform
+import rate_rebin               # rebin to constant S/N
+import do_rebin                 # rebin the statistical metadata weights to match the new bin structures
+import haar_denoise             # Calling the haar_denoising modules
 import matplotlib.pyplot as plt
-import mu0_minimize_CHI2_fmin
+import mu0MinimizeChi2Fmin      # chi^2 minimising function to find the best mu0 value for the power spectrum
 
 
-def haar2_power_mod2a_Zach_denoising(inputFileName): 
+def haar2_power_mod2a_Zach_denoising(
+        inputFileName: str,
+        plot1: bool = False
+        ): 
 
     def shift(
             list: list[any],
@@ -277,184 +280,271 @@ def haar2_power_mod2a_Zach_denoising(inputFileName):
         numberOfSignificantBins: int = size(significantSingnalIndices)
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
         if (numberOfSignificantBins>1):
-            g00: ndarray[int] = where(powerSpectralDensityError > 0)
-            numberOfSignificantBins: int = size(g00)
-            all_t: ndarray[float] = 0.5*(rebinnedTimeBinStart[g00]+rebinnedTimeBinEnd[g00])
-            all_dt: ndarray[float] = 0.5*(rebinnedTimeBinEnd[g00]-rebinnedTimeBinStart[g00]) 
-            all_sig: ndarray[float] = powerSpectralDensity[g00]
-            all_err0: ndarray[float] = powerSpectralDensityError[g00]
-            all_err_chk: ndarray[float] = (1.+2*rebinnedSignalSum[g00]) 
-            all_err: ndarray[float] = all_err0*sqrt(((all_err_chk<0).choose(all_err_chk,0))) #check for the argument being>0
-            all_sig0: ndarray[float] = noiseBaseline[g00]
-            sum2_2_2: ndarray[float] = meanAdjustedWeights[g00]
-            validWeightIndices: ndarray[int] = where(all_sig < significanceSigmaThreshold*all_err0)
-            numberOfInsignificantBins: int = size(validWeightIndices)
-            g2: ndarray[int] = where(all_sig >=  significanceSigmaThreshold*all_err0)
-            ng2: int = size(g2)
+            # isolate all bins that have valid error calculations
+            validErrorIndices: ndarray[int] = where(powerSpectralDensityError > 0)
+            numberOfSignificantBins: int = size(validErrorIndices)
+
+            # extract central plotting coordinates and geometric widths
+            binCenterTimes: ndarray[float] = 0.5 * (
+                rebinnedTimeBinStart[validErrorIndices]
+                + rebinnedTimeBinEnd[validErrorIndices])
+            binHalfWidths: ndarray[float] = 0.5 * (
+                rebinnedTimeBinEnd[validErrorIndices]
+                - rebinnedTimeBinStart[validErrorIndices]) 
+            
+            # pull master signal sets for the valid bins
+            allBinPSDSignals: ndarray[float] = powerSpectralDensity[validErrorIndices]
+            basePSDErrors: ndarray[float] = powerSpectralDensityError[validErrorIndices]
+            allBinNoiseFloor: ndarray[float] = noiseBaseline[validErrorIndices]
+            allBinMeanWeights: ndarray[float] = meanAdjustedWeights[validErrorIndices]
+
+            # apply safety-clipped statistical scaling to the error bars
+            errorCorrectionFactor: ndarray[float] = (1.0 + 2 * rebinnedSignalSum[validErrorIndices]) 
+            safeCorrectionFactor  = where(errorCorrectionFactor < 0, 0, errorCorrectionFactor)
+            adjustedPSDErrors     = basePSDErrors * sqrt(safeCorrectionFactor)
+
+            # catogorise indices into insignificant noise vs significant signals
+            insigninficantBinIndices: ndarray[int] = where(allBinPSDSignals < significanceSigmaThreshold*basePSDErrors)
+            numberOfInsignificantBins: int = size(insigninficantBinIndices)
+            significantBinIndices: ndarray[int] = where(allBinPSDSignals >=  significanceSigmaThreshold*basePSDErrors)
+            numberOfSignificantBins: int = size(significantBinIndices)
+
+
+
+
+
+
             if (numberOfInsignificantBins > 0): # check for the arguments >0
-                all_sig_chk: ndarray[float] = all_sig[validWeightIndices]+significanceSigmaThreshold*all_err0[validWeightIndices]       
-                all_sig[validWeightIndices] = sqrt(((all_sig_chk<0).choose(all_sig_chk,0)))
-                all_err[validWeightIndices] = 0.
+                # calculate a threshold-shifted power limit for the insignificant points
+                shiftedPowerLimits: ndarray[float] = (
+                    allBinPSDSignals[insigninficantBinIndices] 
+                    + significanceSigmaThreshold
+                    * basePSDErrors[insigninficantBinIndices])
                 
-            if (ng2 > 0):
-                # fitting mu_0 using chi2 minimization!
-                pspec_p: ndarray[float] = all_sig[g2]
-                dpspec_p: ndarray[float] = all_err[g2]
-                tau_time: ndarray[float] = all_t[g2]
-                sum22: ndarray[float] = sum2_2_2[g2]
-                #
-                #        
-                all_sig[g2] = sqrt(all_sig[g2])
-                #all_err[g2] = 0.5*all_err[g2]/sqrt(all_sig0[g2])
-                all_err[g2] = 0.5*all_err[g2]/sqrt( all_sig[g2] )
-                #
-                miny: float = min(all_sig[g2])/2.
-                ##subplot(111, xscale = "log", yscale = "log")
-                #axis = [min_dta/2.,max_dta*2., miny,max(append(all_sig([g2],1.)))*2]
-                #errorbar(all_t, all_sig, all_dt, all_err,'r.-')
-                #
-                """
-                ax = plt.subplot(111)
-                ax.set_xscale("log", nonposx = 'clip')
-                ax.set_yscale("log", nonposy = 'clip')
-                plt.errorbar(all_t, all_sig, xerr = all_dt, yerr = all_err, fmt = '.k')
-                ax.set_xlim((min_dta/2.,max_dta*2.))
-                maxy: float = max(append(all_sig[g2],1.))*2
-                ax.set_ylim((miny, maxy))
-                ax.set_title('Title')
-                ax.set_xlabel(r'$\mathrm{\Delta T}$  [s]', fontsize = 12)
-                ax.set_ylabel(r'Flux Variation  $\mathrm{\sigma_{X,\Delta t}}$  [%]', fontsize = 12)
-                #ax.set_text(0.05, 0.9, 'Text goes here',
-                #        fontsize = 14, transform = pl.gca().transAxes,
-                #        ha = 'left', va = 'bottom')
-                #plt.show()
-                #       
-                xx: ndarray[float] = array([1.e-9,1.e9])
-                for i in xrange(int(log10(min_dt)*2.-4.), int(log10(max_dt)*2)):
-                    plt.plot(xx, miny*xx*exp(-i*log(10.)/2.),'c:', markersize = 6)
-                #
-                if (ng > 0):
-                    plt.plot(all_t[g1], all_sig[g1], 'bv')
-                #
-                plt.plot(xx,xx,'r-.')
-                base1 = file_input+"_fluxVariance.png"
-                base_address = '/home/zach/project_wavelet/Flux/'
-                plt.savefig(base_address+base1,format = 'png')
-                plt.clf()
-                #plt.savefig('/Users/Vahid/Desktop/plots/file_input.png',format = 'png')
-                #plt.savefig('/Users/Vahid/untitled/PLOTS/testplot.pdf',format = 'pdf')
-                #Image.open('/Users/Vahid/untitled/PLOTS/testplot.png').save('/Users/Vahid/untitled/PLOTS/testplot.jpg','JPEG')
-                #plt.show()
-                """
+                # clip negative values to zero and convert from power  back to amplitude space
+                safePowerLimits = where(shiftedPowerLimits < 0, 0, shiftedPowerLimits)
+                allBinPSDSignals[insigninficantBinIndices] = sqrt(safePowerLimits)
+                adjustedPSDErrors[insigninficantBinIndices] = 0.0
                 
+            if (numberOfSignificantBins > 0):
+                # isolate significant signal profiles
+                significantPSD: ndarray[float] = allBinPSDSignals[significantBinIndices]
+                significantAdjustedPSD: ndarray[float] = adjustedPSDErrors[significantBinIndices]
+                significantTimeScales: ndarray[float] = binCenterTimes[significantBinIndices]
+                significantMeanWeights: ndarray[float] = allBinMeanWeights[significantBinIndices]
+
+                # cache the raw power before conversion if needed for standard error propagation
+                # rawSignificantPower = allBinPSDSignals[significantBinIndices].copy()
+
+                # transform unit space from power density to linear amplitude space
+                allBinPSDSignals[significantBinIndices] = sqrt(allBinPSDSignals[significantBinIndices])
+
+                # propagate error through the square root transforma
+                adjustedPSDErrors[significantBinIndices] = (
+                    0.5 * adjustedPSDErrors[significantBinIndices]
+                    / sqrt( allBinPSDSignals[significantBinIndices])) # BUG! this is not correct because the allBinPSDSignals has been modified in the previous line. 
                 
-                #   
-                # fitting mu0:
-                #import mu0_minimize_CHI2_fmin
-                MU0, CHI2 = mu0_minimize_CHI2_fmin.mu0_minimize_CHI2_fmin(pspec_p,dpspec_p,tau_time,sum22)
-                #
-                #prnt_chi2 = file_input+'  : '+str(CHI2)
-                #text_file2.write("%s,\n"%prnt_chi2)
-                prnt_chi3: str = inputFileName
-                text_file3.write("%s\n"%prnt_chi3)
-                text_file2.write("%s,\n"%str(CHI2))
-                prnt_tauMIN: str = inputFileName+':'+str(tau_time[0])
-                text_file4.write("%s\n"%prnt_tauMIN)
-                prnt_tauArray: str = inputFileName+':'+str(tau_time)
-                text_file5.write("%s,\n"%prnt_tauArray)
+                # etablish a visual lower boundary for plot scales
+                minimumYPlotLimit: float = min(allBinPSDSignals[significantBinIndices]) /2.0
+
+
+                if plot1:
+                    # initialize log-log figure axis wrapper
+                    fig, ax = plt.subplots(figsize=(8, 6))
+                    ax.set_xscale("log")
+                    ax.set_yscale("log")
+
+                    # plot the master data track
+                    ax.errorbar(
+                        binCenterTimes,
+                        allBinPSDSignals, 
+                        xerr=binHalfWidths,
+                        yerr=adjustedPSDErrors,
+                        fmt='.k',
+                        ecolor='gray',
+                        elinewidth=1,
+                        capsize=2
+                    )
+
+                    # explicitly mark the confirmed significant flux variations
+                    if (numberOfSignificantBins > 0):
+                        ax.plot(
+                            binCenterTimes[significantBinIndices], 
+                            allBinPSDSignals[significantBinIndices], 
+                            'bv',
+                            markersize=8
+                        )
+
+                    # generate reference background power-law slopes
+                    xAxisLimits = array([1.e-9, 1.e9])
+                    logMinDt = int(log10(min(binCenterTimes)) * 2.0 - 4.0)
+                    logMaxDt = int(log10(max(binCenterTimes)) * 2.0)
+
+                    for i in range(logMinDt, logMaxDt):
+                        slopeYValues = minimumYPlotLimit * xAxisLimits * exp(-i * log(10.0) / 2.0)
+                        ax.plot(xAxisLimits, slopeYValues, 'c:', alpha=0.5)
+
+                    # add the 1:1 reference line
+                    ax.plot(xAxisLimits, xAxisLimits, 'r-.', alpha=0.7, label='1:1 Scale Trend')
+
+                    # apply limits, titles, labels, and formatting
+                    xLowerLimit = min(binCenterTimes) / 2.0
+                    xUpperLimit = max(binCenterTimes) * 2.0
+                    ax.set_xlim((xLowerLimit, xUpperLimit))
+
+                    maximumYValue = max(append(allBinPSDSignals[significantBinIndices], 1.0)) * 2.0
+                    ax.set_ylim((minimumYPlotLimit, maximumYValue))
+
+                    ax.set_title('Haar Wavelet Flux Variability Profile', fontsize=14, fontweight='bold')
+                    ax.set_xlabel(r'$\Delta$T [seconds]', fontsize=12)
+                    ax.set_ylabel(r'Flux Variation $\sigma_{X,\Delta t}$ [%]', fontsize=12)
+                    ax.legend(loc='upper right')
+                    ax.grid(True, which="both", ls="--", alpha=0.3)
+
+                    # dynamic File Saving Architecture
+                    outputFileName = f"{inputFileName}_fluxVariance.png"
+                    destinationDirectory = '/home/zach/project_wavelet/Flux/'
+                    plt.savefig(f"{destinationDirectory}{outputFileName}", format='png', dpi=300)
+                    plt.close(fig) # Memory efficient alternative to clf()
+
                 
-                ####plt.figure(2)
-                ###tau2_time = tau_time[1:]
-                ###tau3_time = 0.5*(tau2_time[1:]+tau2_time[:-1])
-                #prb = exp(-0.5*diff(CHI2))
-                #plt.plot(tau3_time,prb,'bD-')
-                ###chi2_diffTest = sqrt(diff(CHI2))
-                ####plt.plot(tau3_time,chi2_diffTest,'r*--')
-                ###base2 = file_input+"_CHI2.png"
-                ###base_address = '/home/zach/project_wavelet/CHI2/'
-                ###plt.savefig(base_address+base2,format = 'png')
-                ###plt.clf()
-                """
-                whr  = where(diff(sign(mrg - prb))!= 0)
-                sz_whr = size(whr)
-                if (sz_whr > 0):
-                    y1_1 = prb[whr[0]]
-                    y1_2 = prb[whr[0]+1]
-                    y2_1 = mrg[whr[0]]
-                    y2_2 = mrg[whr[0]+1]
-                    t_1 = tau3_time[whr[0]]
-                    t_2 = tau3_time[whr[0]+1]
-                    t_cross = ((t_2-t_1)*(y1_1-y2_1)-t_1*((y1_2-y1_1)-(y2_2-y2_1)))/((y2_2-y2_1)-(y1_2-y1_1))
-                else:
-                    t_cross = 'NA'
-                """
-                            
-                wh_cv = where(CHI2 <=  chi2CriticalValues[:size(CHI2)])
-                if (size(wh_cv) > 0):
-                    ref = arange(size(wh_cv))
-                    prnt_cvSize: str = inputFileName+':'+str(size(wh_cv))
-                    text_file6.write("%s\n"%prnt_cvSize)
-                    diff_ref = wh_cv - ref
-                    wh_ref = where(diff_ref[0] !=  0)
-                    if (size(wh_ref[0])  ==  0):
-                        CHI2 = [CHI2[x] for x in wh_cv[0]]
-                        #tau_time = [tau_time[y] for y in wh_cv[0]]
-                        tau_time = tau_time[:max(wh_cv[0])+2]
+                # chi^2 minimization to find the best mu0 value for the power spectrum:
+                optimalMu0, minimisedChi2 = mu0MinimizeChi2Fmin(
+                    significantPSD,
+                    significantAdjustedPSD,
+                    significantTimeScales,
+                    significantMeanWeights
+                    )
+
+                # save the results to the output files for further analysis and record-keeping
+                # log the filename to the master dataset index registry
+                text_file3.write(f"{inputFileName}\n")
+
+                # append the minimized Chi-Square goodness-of-fit statistic
+                text_file2.write(f"{minimisedChi2},\n")
+
+                # record the minimum significant variability timescale (tau_min)
+                # Index 0 represents the shortest timescale that survived the 3-sigma filter
+                minimumSignificantTimeScale = significantTimeScales[0]
+                text_file4.write(f"{inputFileName}:{minimumSignificantTimeScale}\n")
+
+                # save the full list of active significant timescales for this signal
+                text_file5.write(f"{inputFileName}:{list(significantTimeScales)},\n")
+
+                # locate indices where the calculated Chi-Square falls into the noise floor
+                maxComparisonLength: int = size(minimisedChi2)
+                noiseFloorIndices = where(minimisedChi2 <=  chi2CriticalValues[:maxComparisonLength])
+                if (size(noiseFloorIndices) > 0):
+                    # log the size of the noise profile array to text_file6
+                    text_file6.write(f"{inputFileName}:{size(noiseFloorIndices)}\n")
+
+                    # generate sequential reference array to check for index continuity gaps
+                    sequentialReference: ndarray[int] = arange(size(noiseFloorIndices))
+                    continuityCheck = noiseFloorIndices - sequentialReference
+
+                    # because continuityCheck is a flat 1D array, we unpack [0]
+                    contiuityGaps = where(continuityCheck[0] !=  0)
+
+                    # truncate using the flat array criteria
+                    if (size(contiuityGaps[0])  ==  0):
+                        # noise dominates from the stat; filter using the full noiseFloorIndices array
+                        minimisedChi2 = array([minimisedChi2[index] for index in noiseFloorIndices])
+                        maxNoiseIndex = int(max(noiseFloorIndices))
+                        significantTimeScales = significantTimeScales[:maxNoiseIndex + 2]
                     else:
-                        wh_indx = min(wh_ref[0])
-                        CHI2 = CHI2[:wh_indx]
-                        tau_time = tau_time[:wh_indx+1]
-                        
-                    CHI2 = array(CHI2)
-                    tau_time = array(tau_time)
-                    tau2_time = tau_time[1:]
-                    tau3_time = 0.5*(tau2_time[1:]+tau2_time[:-1])
+                        # signal was good initially; truncate at the first gap index
+                        firstNoiseCutoffIndex = int(min(contiuityGaps))
+                        minimisedChi2 = minimisedChi2[:firstNoiseCutoffIndex]
+                        significantTimeScales = significantTimeScales[:firstNoiseCutoffIndex + 1]
                     
-                    chi2_diffTest = sqrt(abs(diff(CHI2)))
+                    # ensure unifor numpy array formatting across truncated outputs
+                    minimisedChi2 = asarray(minimisedChi2, dtype = 'float')
+                    significantTimeScales = asarray(significantTimeScales, dtype = 'float')
+
+                    # derive updated geometric coordinate spacings on the cropped data
+                    shiftedTimeScales = significantTimeScales[1:]
+                    doubleShiftedMidpoints = 0.5 * (shiftedTimeScales[1:] + shiftedTimeScales[:-1])
                     
-                    if (chi2_diffTest.size > 0):
-                        thrshld = 2.
-                        sigma2_cl = where(chi2_diffTest >=  thrshld)
-                        sigma2_cl2 = sigma2_cl[0]
-                        if (sigma2_cl2.size  ==  0):
-                            t_min = tau3_time[-1]
-                            #prnt = file_input+'  : '+str(t_min)+'     D     '+str(chi2_diffTest[-1])
-                            prnt: str = inputFileName+':'+str(t_min)+'  '+str(CHI2[-1]/(CHI2.size-1))+'  '+str(CHI2[-1])+'  '+str(CHI2.size-1)+' -1 '+str(chi2_diffTest[-1])
-                            text_file1.write("%s\n"%prnt)
+                    # calculate absolute sigma step change on the cropped dataset
+                    chi2SigmaDistanceChange = sqrt(abs(diff(minimisedChi2)))
+
+
+                    if (chi2SigmaDistanceChange.size > 0):
+                        sigmaThresholdLimit = 2.
+
+                        # unpack the tuple to find wher the threshold condition is met
+                        thresholdCrossings = where(chi2SigmaDistanceChange >=  sigmaThresholdLimit)[0]
+
+                        if (thresholdCrossings.size  ==  0):
+                            # scenario 1: no major breaks found; set to the last significant midpoint
+                            minimumTrueTimeScale = doubleShiftedMidpoints[-1]
+                            degreesOfFreedom = minimisedChi2.size - 1
+                            reducedChi2 = minimisedChi2[-1] / degreesOfFreedom
+
+                            logPayload: dict = {
+                                "inputFileName": inputFileName,
+                                "minimumTrueTimeScale": minimumTrueTimeScale,
+                                "reducedChi2": reducedChi2,
+                                "localReducedChi2": None,
+                                "minimisedChi2": minimisedChi2[-1],
+                                "degreesOfFreedom": degreesOfFreedom,
+                                "chi2SigmaDistanceChange": chi2SigmaDistanceChange[-1],
+                                "firstCrossingIndex": None,
+                                "exitStatus": -1
+                            }
+                            text_file1.write(f"{logPayload}\n")
                         else:
-                            sigma2_indx = sigma2_cl2[0]
-                            if (sigma2_indx > 0):
-                                y_1 = chi2_diffTest[sigma2_indx-1]
-                                y_2 = chi2_diffTest[sigma2_indx]
-                                t_1 = tau3_time[sigma2_indx-1]
-                                t_2 = tau3_time[sigma2_indx]
-                                t_min = (thrshld-y_2)/(y_2-y_1)*(t_2-t_1)+t_2
-                                CHI2_0_dof = CHI2[sigma2_indx]/(sigma2_indx)
-                                prnt: str = inputFileName+':'+str(t_min)+'  '+str(CHI2_0_dof)+'  '+str(CHI2[sigma2_indx])+'  '+str(sigma2_indx)+' 0 '+' 0 '
-                                #prnt = file_input+'  : '+str(t_min)
-                                text_file1.write("%s\n"%prnt)
-                            else:
-                                t_min = tau3_time[sigma2_indx]
-                                prnt: str = inputFileName+':'+str(t_min)+'  '+str(CHI2[0])+'  '+' 0 '+'   ' +' 0 '+'  1  '+str(chi2_diffTest[0])
-                                #prnt = file_input+'  : '+str(t_min)+'     U    '+str(chi2_diffTest[0])
-                                text_file1.write("%s\n"%prnt)
+                            # extract the target index wher the threshold was triggered
+                            firstCrossingIndex = thresholdCrossings[0]
+
+                            if (firstCrossingIndex > 0):
+                                # scenario 2: perform linear interpolation to find the exact crossing point
+                                yStart = chi2SigmaDistanceChange[firstCrossingIndex-1]
+                                yEnd = chi2SigmaDistanceChange[firstCrossingIndex]
+
+                                timeStart = doubleShiftedMidpoints[firstCrossingIndex-1]
+                                timeEnd = doubleShiftedMidpoints[firstCrossingIndex]
+
+                                # linear intersection calculation
+                                minimumTrueTimeScale = (
+                                    (sigmaThresholdLimit - yEnd)
+                                    / (yEnd - yStart)
+                                    * (timeEnd - timeStart)
+                                    + timeEnd)
                                 
-                        print(f't_min = {t_min}')
+                                localReducedChi2 = minimisedChi2[firstCrossingIndex] / (firstCrossingIndex)
+                                
+                                logPayload: dict = {
+                                    "inputFileName": inputFileName,
+                                    "minimumTrueTimeScale": minimumTrueTimeScale,
+                                    "reducedChi2": None,
+                                    "localReducedChi2": localReducedChi2,
+                                    "minimisedChi2": minimisedChi2[firstCrossingIndex],
+                                    "degreesOfFreedom": None,
+                                    "chi2SigmaDistanceChange": chi2SigmaDistanceChange[firstCrossingIndex],
+                                    "firstCrossingIndex": firstCrossingIndex,
+                                    "exitStatus": 0
+                                }
+                                text_file1.write(f"{logPayload}\n")
+                            else:
+                                # scenario 3: threshold hit immediately
+                                minimumTrueTimeScale = doubleShiftedMidpoints[firstCrossingIndex]
+                                
+                                logPayload: dict = {
+                                    "inputFileName": inputFileName,
+                                    "minimumTrueTimeScale": minimumTrueTimeScale,
+                                    "reducedChi2": None,
+                                    "localReducedChi2": None,
+                                    "minimisedChi2": minimisedChi2[0],
+                                    "degreesOfFreedom": None,
+                                    "chi2SigmaDistanceChange": chi2SigmaDistanceChange[0],
+                                    "firstCrossingIndex": None,
+                                    "exitStatus": 1
+                                }
+                                text_file1.write(f"{logPayload}\n")
+                                
+                        print(f't_min = {minimumTrueTimeScale}')
                     
     text_file1.close()    
     text_file2.close()

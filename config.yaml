@@ -1,0 +1,79 @@
+# config.yaml
+# ==========================================================================================
+# 1. General Configuration
+# ==========================================================================================
+# General settings for the entire project
+generalSettings:
+  # Directories
+  directories:
+    dataPath: "./data" # data path
+    processedDataPath: "./data/processed" # processed data path
+    sharedObjectsPath: "./cFiles" # shared objects path
+
+  # Logging settings
+  logging:
+    silentMode: false # if true, suppresses console output
+    logLevel: "RESULTS" # log level to save to log file, options: "NONE", "CONSOLE", "RESULTS", "SIMPLE"
+
+  # system settings
+  system:
+    highRAMSystem: false # if true, uses high RAM system settings
+
+
+
+# ==========================================================================================
+# Data Pre-processing Configuration
+# ==========================================================================================
+preProcessingConfig:
+  # General settings
+  general:
+    downloadData: true # if true, downloads data from the source
+    deleteWhenDone: true # if true, deletes downloaded files after processing
+
+    # ======================================================================================
+    # 2.1 Swiff BAT Configuration
+    # ======================================================================================
+    # Configuration for Swiff BAT data pre-processing
+    swiffBatConfig:
+      # Download settings
+      download:
+        energyRange: "15-350" # energy range
+      
+      # Processing settings
+      processing:
+        initialBinSize: 100e-6 # initial bin size
+
+
+    # ======================================================================================
+    # 2.2 Fermi GMB Configuration
+    # ======================================================================================
+    # Configuration for Fermi GMB data pre-processing
+
+    # placeholder for future Fermi GMB configuration settings
+
+    # ======================================================================================
+    # 2.3 SVOM Configuration
+    # ======================================================================================
+    # Configuration for SVOM data pre-processing
+
+    # placeholder for future SVOM configuration settings
+
+
+# ==========================================================================================
+# 3. MVT Analysis Configuration
+# ==========================================================================================
+mvtAnalysisConfig:
+  # Analysis settings
+  numberOfSimulations: 100 # number of Monte Carlo simulations to run
+  timeWindowSize: 0.3 # time window size for MVT analysis
+  transformType: "haar" # transform type for MVT analysis, options: "haar", others are not yet implemented
+  signalToNoiseThreshold: 5.0 # signal-to-noise threshold
+
+  thresholdSettings:
+    # Threshold settings
+    thresholdMethod: "hard" # threshold method, options: "hard", "soft"
+    thresholdScaleFactor: 0.5 # scale factor for threshold coefficients
+    backgroundNoiseModel: "poisson" # background noise model, options: "poisson", "gaussian" (gaussian is not yet implemented)
+
+  
+

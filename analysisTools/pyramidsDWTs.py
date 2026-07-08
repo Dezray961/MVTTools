@@ -19,30 +19,30 @@ class PyramidDWTs:
     """
     def __init__(
             self,
-            libraryPath: str | Path | None = None
+            sharedObjectsPath: str | Path | None = None
             ) -> None:
         """Initializes the PyramidDWTs class.
 
         Args:
-            libraryPath (str | Path | None, optional): Path to shared object library. Defaults to None.
+            sharedObjectsPath (str | Path | None, optional): Path to shared object library. Defaults to None.
         """
-        self.libraryPath = self.__resolveLibraryPath(libraryPath)
+        self.libraryPath = self.__resolveLibraryPath(sharedObjectsPath)
         self.lib = CDLL(str(self.libraryPath))
         self.__configureSignatures()
 
 
     @staticmethod
     def __resolveLibraryPath(
-        libraryPath: str | Path | None
+        sharedObjectsPath: str | Path | None
     ) -> Path:
         """Resolves the path to the shared library. If a path is provided, it is used. Otherwise, the function looks for the library in the cFiles directory. If the library is not found, it compiles the C++ code into a shared library.
 
         Args:
-            libraryPath (str | Path | None): Path to shared object library. If None, the function looks for the library in the cFiles directory. 
+            sharedObjectsPath (str | Path | None): Path to shared object library. If None, the function looks for the library in the cFiles directory. 
         """
         # If a library path is provided, use it. 
-        if libraryPath is not None:
-            return Path(libraryPath).expanduser().resolve()
+        if sharedObjectsPath is not None:
+            return Path(sharedObjectsPath).expanduser().resolve()
 
         # Otherwise, look for the library in the cFiles directory
         module_dir = Path(__file__).resolve().parent

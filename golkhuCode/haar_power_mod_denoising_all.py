@@ -51,7 +51,7 @@ def haar2_power_mod2a_Zach_denoising(
     # geometric spacing of deltaT bins
     timeBinStart: ndarray[float] = 2** (logMinimumDeltaTime +
                         (logMaximumDeltaTime - logMinimumDeltaTime)
-                        *arange(numberOfBins) / (numberOfBins-1.))
+                        *arange(numberOfBins) / (numberOfBins-1))
 
     numberOfBins = numberOfBins - 1 # subtract 1 because we are using deltaTime rather than bin edges
 
@@ -122,6 +122,9 @@ def haar2_power_mod2a_Zach_denoising(
                 (logRate, logRateCopy))
             deltaLogRate = concatenate(
                 (deltaLogRate, deltaLogRateCopy))
+            
+
+        # TODO: everything below this point needs to be implimented in findDeltat.py
         
         # perform the Haar non-decimated wavelet transform on the logRate and deltaLogRate arrays
         waveletResults: tuple = haar_nondec.haar_nondec(

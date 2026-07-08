@@ -63,6 +63,9 @@ def analysisPipe(
 
 
 if __name__ == "__main__":
+    from loadConfig import importConfiguration
+    config = importConfiguration()
+
     grbName: str = "GRB080319B"
     analysisPipe(
         GRBName = grbName,

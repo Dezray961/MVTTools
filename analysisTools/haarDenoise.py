@@ -87,7 +87,6 @@ def haarDenoise(
         meanRate: float = mean(countsInBin) / timeInBin
         return meanRate
 
-
     burstData: list[float] = data['rate'].to_list()
 
     maxLevel: int = int(floor(log2(len(burstData)))) - 1

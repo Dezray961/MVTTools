@@ -10,6 +10,7 @@ generalSettings:
     dataPath: "./data" # data path
     processedDataPath: "./data/processed" # processed data path
     sharedObjectsPath: "./cFiles" # shared objects path
+    logPath: "./logs" # log path
 
   # Logging settings
   logging:
@@ -31,33 +32,49 @@ preProcessingConfig:
     downloadData: true # if true, downloads data from the source
     deleteWhenDone: true # if true, deletes downloaded files after processing
 
-    # ======================================================================================
-    # 2.1 Swiff BAT Configuration
-    # ======================================================================================
-    # Configuration for Swiff BAT data pre-processing
-    swiffBatConfig:
-      # Download settings
-      download:
-        energyRange: "15-350" # energy range
-      
-      # Processing settings
-      processing:
-        initialBinSize: 100e-6 # initial bin size
+  # ======================================================================================
+  # 2.1 Swift BAT Configuration
+  # ======================================================================================
+  # Configuration for Swift BAT data pre-processing
+  swiftBATConfig:
+    # Download settings
+    download:
+      energyRange: "15-350" # energy range
+    
+    # Processing settings
+    processing:
+      initialBinSize: 100e-6 # initial bin size
 
 
-    # ======================================================================================
-    # 2.2 Fermi GMB Configuration
-    # ======================================================================================
-    # Configuration for Fermi GMB data pre-processing
+  # ======================================================================================
+  # 2.2 Fermi GMB Configuration
+  # ======================================================================================
+  # Configuration for Fermi GMB data pre-processing
 
-    # placeholder for future Fermi GMB configuration settings
+  # placeholder for future Fermi GMB configuration settings change values later
+  fermiGMBConfig:
+    # Download settings
+    download:
+      energyRange: "8-1000" # energy range
+    
+    # Processing settings
+    processing:
+      initialBinSize: 100e-6 # initial bin size
 
-    # ======================================================================================
-    # 2.3 SVOM Configuration
-    # ======================================================================================
-    # Configuration for SVOM data pre-processing
+  # ======================================================================================
+  # 2.3 SVOM Configuration
+  # ======================================================================================
+  # Configuration for SVOM data pre-processing
+  SVOMConfig:
+    # Download settings??? Not sure if SVOM will have a download portal?
+    download:
+      energyRange: "15-350" # energy range
+    
+    # Processing settings
+    processing:
+      initialBinSize: 100e-6 # initial bin size
 
-    # placeholder for future SVOM configuration settings
+  # placeholder for future SVOM configuration settings change values later
 
 
 # ==========================================================================================
@@ -69,6 +86,7 @@ mvtAnalysisConfig:
   timeWindowSize: 0.3 # time window size for MVT analysis
   transformType: "haar" # transform type for MVT analysis, options: "haar", others are not yet implemented
   signalToNoiseThreshold: 5.0 # signal-to-noise threshold
+  significanceSigmaThreshold: 3.0 # significance sigma threshold for power over background noise
 
   thresholdSettings:
     # Threshold settings

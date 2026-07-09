@@ -20,13 +20,16 @@ class LightCurveData:
     def __init__(
             self,
             GRBName: str,
+            source: str
         ) -> None:
         """Initializes the GRBData class. This method reads in the CSV files for the given GRB name and stores the data in pandas DataFrames.
 
         Args:
             GRBName (str): Name of the GRB, this should follow the standard naming convention for GRBs, e.g. "GRB080319B"
+            source (str): The source of the data e.g. "Swift", "Fermi", "SVOM".
         """
         self.name: str = GRBName
+        self.source: str = source
         self.__preBurstCSV: str = f"data/processed/{self.name}/{self.name}PreBurstLC.csv"
         self.__burstCSV: str = f"data/processed/{self.name}/{self.name}BurstLC.csv"
         print("Importing the pre-burst light curve data...")
@@ -77,7 +80,7 @@ if __name__ == "__main__":
     # print the working directory
     import matplotlib.pyplot as plt
     grbName: str = "GRB080319B"
-    data: LightCurveData = LightCurveData(grbName)
+    data: LightCurveData = LightCurveData(grbName, "Swift")
 
     # plot the data
     fig, axs = plt.subplots(2, 1)

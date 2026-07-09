@@ -124,7 +124,6 @@ def haar2_power_mod2a_Zach_denoising(
                 (deltaLogRate, deltaLogRateCopy))
             
 
-        # TODO: everything below this point needs to be implimented in findDeltat.py
         
         # perform the Haar non-decimated wavelet transform on the logRate and deltaLogRate arrays
         waveletResults: tuple = haar_nondec.haar_nondec(
@@ -208,6 +207,16 @@ def haar2_power_mod2a_Zach_denoising(
             & (powerSpectrumError > 0))
         numberOfInsignificantBins: int = size(insigninficantBins)
 
+
+
+
+        # TODO: everything below this point needs to be implimented in findDeltat.py
+
+
+
+
+
+
         # setup variables for the rebinning process
         targetSignalToNoiseRatio: float = 3.0
         netVariabilitySignal: ndarray[float] = binChi2Sum  #-binTermCounts*1.0 
@@ -218,10 +227,6 @@ def haar2_power_mod2a_Zach_denoising(
             binRawWeightSum * 2.0 * binTermCounts / safeAdjustedWeights)
         timeBinDurations = binRawWeightSum
         
-
-
-
-
         # adaptively merge bins to satisfy the target Signal-to-Noise ratio
         rateRebin: tuple = rate_rebin.rate_rebin(
             timeBinStart,
@@ -281,6 +286,15 @@ def haar2_power_mod2a_Zach_denoising(
         
         # count how many bins have significant signals
         numberOfSignificantBins: int = size(significantSingnalIndices)
+
+
+
+
+
+
+
+
+
 
 
         if (numberOfSignificantBins>1):

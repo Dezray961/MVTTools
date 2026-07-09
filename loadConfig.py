@@ -34,7 +34,28 @@ def importConfiguration(configFilePath: str = "config.yaml"):
     return DictToClass(configYAML)
 
 
+def getInitialBinSize(
+        config,
+        source: str
+    ) -> float:
+    """Get the initial bin size for a given source from the configuration. Seperate function to allow for future missions to be added.
 
+    Args:
+        config: The configuration object returned by importConfiguration().
+        source (str): The source of the data e.g. "Swift", "Fermi", "SVOM".
+
+    Returns:
+        float: The initial bin size for the specified source.
+    """
+    match source:
+        case "Swift":
+            return config.preProcessingConfig.swiftBATConfig.processing.initialBinSize
+        case "Fermi":
+            return config.preProcessingConfig.fermiGMBConfig.processing.initialBinSize
+        case "SVOM":
+            return config.preProcessingConfig.svomConfig.processing.initialBinSize
+        case _:
+            raise ValueError(f"Unknown source: {source}. Valid options are 'Swift', 'Fermi', 'SVOM'.")
 
 
 if __name__ == "__main__":

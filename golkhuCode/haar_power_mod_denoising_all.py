@@ -210,7 +210,6 @@ def haar2_power_mod2a_Zach_denoising(
 
 
 
-        # TODO: everything below this point needs to be implimented in findDeltat.py
 
 
 
@@ -327,11 +326,6 @@ def haar2_power_mod2a_Zach_denoising(
             significantBinIndices: ndarray[int] = where(allBinPSDSignals >=  significanceSigmaThreshold*basePSDErrors)
             numberOfSignificantBins: int = size(significantBinIndices)
 
-
-
-
-
-
             if (numberOfInsignificantBins > 0): # check for the arguments >0
                 # calculate a threshold-shifted power limit for the insignificant points
                 shiftedPowerLimits: ndarray[float] = (
@@ -364,6 +358,9 @@ def haar2_power_mod2a_Zach_denoising(
                 
                 # etablish a visual lower boundary for plot scales
                 minimumYPlotLimit: float = min(allBinPSDSignals[significantBinIndices]) /2.0
+
+
+
 
 
                 if plot1:
@@ -424,6 +421,12 @@ def haar2_power_mod2a_Zach_denoising(
                     destinationDirectory = '/home/zach/project_wavelet/Flux/'
                     plt.savefig(f"{destinationDirectory}{outputFileName}", format='png', dpi=300)
                     plt.close(fig) # Memory efficient alternative to clf()
+
+
+        # TODO: everything below this point needs to be implimented in findDeltat.py
+
+
+
 
                 
                 # chi^2 minimization to find the best mu0 value for the power spectrum:

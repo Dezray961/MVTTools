@@ -2,7 +2,7 @@ from astropy.io.fits import getdata,getheader
 import matplotlib as mpl
 mpl.use('Agg')
 from haar_nondec_regular_err_wt import haar_nondec
-from haar_denoise import haar_denoise
+from balaCode.haarDenoise import haarDenoise
 from pylab import errorbar,title,xlabel,ylabel,savefig,plot,loglog,xlim,ylim,figure,clf
 from numpy import log,sqrt,where,array,exp,median,arange,ones,logical_or,isnan,percentile
 from scipy.optimize import minimize_scalar
@@ -24,8 +24,8 @@ def haar_power_mod(rate,drate,min_dt=1.e-4,max_dt=100.,tau_bg_max=0.01,nrepl=2,d
 
     if (weight):
         # calculate the power spectrum weighted by the denoised flux
-        wt = haar_denoise(rate,drate)
-        wt = haar_denoise(wt,drate).clip(0.)
+        wt = haarDenoise(rate,drate)
+        wt = haarDenoise(wt,drate).clip(0.)
     else:
         wt = ones(len(rate),dtype='float64')
 

@@ -3,7 +3,7 @@ from analysisTools.pyramidsDWTs import MODWT
 from analysisTools.haarDenoise import haarDenoise
 from numpy import ceil, log, log10, ndarray, arange, zeros, newaxis, sqrt, zeros_like as zerosLike, clip
 from numpy import tile, where, intersect1d, sum as sumElements, asarray, bincount, size, array, append
-from numpy import exp, isnan, isinfinite
+from numpy import exp, isnan, isinf
 from scipy.stats import chi2
 from scipy.ndimage import uniform_filter1d as uniformFilter1D
 import pandas as pd
@@ -135,8 +135,6 @@ class HaarMTVFinder:
         self.__timeBinDuration: ndarray = self.data.burstData['timeInBin'].to_numpy(dtype='float32') # duration of each time bin for the light curve data.
         self.__rate: ndarray = self.data.burstData['rate'].to_numpy(dtype='float32') # rate values for the light curve data.
         self.__deltaRate: ndarray = self.data.burstData['error'].to_numpy(dtype='float32') # error in the rate values for the light curve data.
-        self.__logRate: ndarray = log(self.__rate) # logarithm of the rate values for the light curve data.
-        self.__deltaLogRate: ndarray = self.__deltaRate / self.__rate # error in the logarithm of the rate values for the light curve data.
         self.__totcounts: ndarray = self.data.burstData['totcounts'].to_numpy(dtype='int') # total counts for the light curve data.
 
 
@@ -185,7 +183,7 @@ class HaarMTVFinder:
         print("Performing Haar wavelet transform...")
         # perform the Haar wavelet transform on the light curve data
         waveletCoefficients, scalingCoefficients = MODWT(
-            self.__logRate
+            self.__rate
         )
         print("Haar wavelet transform complete.")
         print("Calculating geometric variables for Haar wavelet coefficients...")
@@ -212,7 +210,7 @@ class HaarMTVFinder:
             # propagate the instrumental error
             # compute rolling squared mean over the active filter window size
             squaredErrorMeans: ndarray = uniformFilter1D(
-                self.__deltaLogRate ** 2,
+                self.__deltaRate ** 2,
                 size = halfStride
             )
             rawCoefficientErrorMatrix[levelIndex, :] = sqrt(squaredErrorMeans * 2.0) # propagate the error through the Haar wavelet transform
@@ -221,11 +219,11 @@ class HaarMTVFinder:
             # propagate adjusted source error
             # calculate empirical variance of the signal to find intrinsic source variability
             localMeanOfSignal: ndarray = uniformFilter1D(
-                self.__logRate,
+                self.__rate,
                 size = scaleWidthInBins
             )
             localMeanOfSquared: ndarray = uniformFilter1D(
-                self.__logRate ** 2,
+                self.__rate ** 2,
                 size = scaleWidthInBins
             )
             localSignalVariance: ndarray = localMeanOfSquared - localMeanOfSignal ** 2
@@ -254,12 +252,12 @@ class HaarMTVFinder:
         """
         # create a dataframe to hand into the haarDenoise function
         data: pd.DataFrame = pd.DataFrame({
-            'rate': self.__logRate,
+            'rate': self.__rate,
             'totcounts': self.__totcounts
         })
 
         # denoise the signal timeline using the MODWT
-        self.__logRate = haarDenoise(data) # NOTE Golkhu's code also hands in the error to this step
+        self.__rate = haarDenoise(data) # NOTE Golkhu's code also hands in the error to this step
 
         print("Padding the signal timeline to the next power of 2 for the Haar wavelet transform...")
 
@@ -269,8 +267,8 @@ class HaarMTVFinder:
         
         # tile the measurement arrays
         self.__timeBinDuration = tile(self.__timeBinDuration, totalCycles)
-        self.__logRate = tile(self.__logRate, totalCycles)
-        self.__deltaLogRate = tile(self.__deltaLogRate, totalCycles)
+        self.__rate = tile(self.__rate, totalCycles)
+        self.__deltaRate = tile(self.__deltaRate, totalCycles)
 
         # construct an advancing time array for the tiled signal timeline
         timeOffset: float = maximumTimeDifference * arange(totalCycles)
@@ -367,6 +365,10 @@ class HaarMTVFinder:
             & (self.__powerSpectrumError > 0))
         self.__numberOfInsignificantBins: int = len(insignificantBins[0])
 
+    """
+    this isn't right... This bins the data into the geometric bins by fixed SNR. There should be thousands
+    new bins not 47...
+    """
 
     @staticmethod
     def __rateRebin(
@@ -546,7 +548,21 @@ class HaarMTVFinder:
         self.__rebinnedSignalSum: ndarray = rateRebinned[3]
         rebinnedErrorSum: ndarray = rateRebinned[4]
         rebinnedMappingIndex: ndarray = rateRebinned[5]
-        print(self.__rebinnedTimeBinStart, self.__rebinnedTimeBinEnd, rebinnedTimeBinDuration, self.__rebinnedSignalSum, rebinnedErrorSum, rebinnedMappingIndex)
+        print("Rebinned time bin start")
+        print(self.__rebinnedTimeBinStart)
+        print("Rebinned time bin end")
+        print(self.__rebinnedTimeBinEnd)
+        print("Rebinned time bin duration")
+        print(rebinnedTimeBinDuration)
+        print("Rebinned signal sum")
+        print(self.__rebinnedSignalSum)
+        print("Rebinned error sum")
+        print(rebinnedErrorSum)
+        print("Rebinned mapping index")
+        print(rebinnedMappingIndex)
+
+        # convert to logarithmic space
+        self.__rebinnedSignalSum = log(self.__rebinnedSignalSum)
 
         # calculate the noralised power spectral density and its associated error
         safeDurations: ndarray = clip(rebinnedTimeBinDuration, 1.0, None)
@@ -601,7 +617,7 @@ class HaarMTVFinder:
 
         # plot the master data track
         ax.errorbar(
-            self.__binCenterTimes,
+            self.__binCentreTimes,
             self.__allBinPSDSignals, 
             xerr=self.__binHalfWidths,
             yerr=self.__adjustedPSDErrors,
@@ -614,7 +630,7 @@ class HaarMTVFinder:
         # explicitly mark the confirmed significant flux variations
         if (self.__numberOfSignificantBins > 0):
             ax.plot(
-                self.__binCenterTimes[self.__significantSignalIndices], 
+                self.__binCentreTimes[self.__significantSignalIndices], 
                 self.__allBinPSDSignals[self.__significantSignalIndices], 
                 'bv',
                 markersize=8
@@ -622,8 +638,8 @@ class HaarMTVFinder:
 
         # generate reference background power-law slopes
         xAxisLimits: ndarray = array([1.e-9, 1.e9])
-        logMinDt: int = int(log10(min(self.__binCenterTimes)) * 2.0 - 4.0)
-        logMaxDt: int = int(log10(max(self.__binCenterTimes)) * 2.0)
+        logMinDt: int = int(log10(min(self.__binCentreTimes)) * 2.0 - 4.0)
+        logMaxDt: int = int(log10(max(self.__binCentreTimes)) * 2.0)
 
         for i in range(logMinDt, logMaxDt):
             slopeYValues: ndarray = self.__minimumYPlotLimit * xAxisLimits * exp(-i * log(10.0) / 2.0)
@@ -633,8 +649,8 @@ class HaarMTVFinder:
         ax.plot(xAxisLimits, xAxisLimits, 'r-.', alpha=0.7, label='1:1 Scale Trend')
 
         # apply limits, titles, labels, and formatting
-        xLowerLimit: float = min(self.__binCenterTimes) / 2.0
-        xUpperLimit: float = max(self.__binCenterTimes) * 2.0
+        xLowerLimit: float = min(self.__binCentreTimes) / 2.0
+        xUpperLimit: float = max(self.__binCentreTimes) * 2.0
         ax.set_xlim((xLowerLimit, xUpperLimit))
 
         maximumYValue: float = max(append(self.__allBinPSDSignals[self.__significantSignalIndices], 1.0)) * 2.0
@@ -717,7 +733,7 @@ class HaarMTVFinder:
                 self.__adjustedPSDErrors[self.__significantBinIndices] = (
                     0.5 * self.__significantAdjustedPSD / sqrt(self.__significantPSD)) # BUG this is not correct because allBinPSDSignals has been modified on the previous line.
                 
-                # establish a cisual lower boundary for plot scales
+                # establish a visual lower boundary for plot scales
                 self.__minimumYPlotLimit: float = min(self.__allBinPSDSignals[self.__significantBinIndices]) * 0.5
 
                 if self.__plot1:

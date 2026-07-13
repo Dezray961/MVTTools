@@ -1,0 +1,584 @@
+"""
+Haar wavelet methods. Vectorised implementation of various Haar wavelet algorithms found in 
+https://github.com/sumanbala2210-USRA/GBM_MVT_paper. Original code by Suman Bala, modified
+by Derek Pinkett
+"""
+
+from numpy import empty,log,sqrt,abs,median, ndarray, pad, diff, full, sqrt, count
+from numpy import log2, hstack, arange, round, unique, zeros, cumsum, ceil, exp
+from scipy.special import erf
+
+floatType = 'float32' #TODO add this to the config file and import it from there
+intType = 'int32' #TODO add this to the config file and import it from there
+
+
+
+def haarDenoise(
+        data: ndarray,
+        error: ndarray = [],
+        thresholdFactor: float = 1.0,
+        estimateNoise: bool = False,
+        soft: bool = False
+        ):
+    """
+    Haar denoiser using a vectorised implementation of the Haar wavelet denoising algorithm. This function takes in a 1D array of data and applies Haar wavelet denoising to reduce noise while preserving important features in the signal.
+
+    Args:
+        data (ndarray): 1D array of input data to be denoised.
+        error (ndarray, optional): 1D array of error values. Defaults to [].
+        thresholdFactor (float, optional): Threshold factor for denoising. Defaults to 1.0.
+        estimateNoise (bool, optional): Whether to estimate noise. Defaults to False.
+        soft (bool, optional): Whether to use soft thresholding. Defaults to False.
+
+    Returns:
+        ndarray: Denoised data array.
+    """
+
+    data = data.astype(floatType)
+    lengthOfData: int = len(data)
+    useError: bool = True
+
+    if error is None or error.size == 0:
+        useError = False
+    else:
+        # compute the variance of the error
+        varianceError: ndarray = error.astype(floatType) ** 2
+
+    # determine the maximum decomposition level using the bit length of the data length minus one
+    maxDecompositionLevel: int = (lengthOfData - 1).bit_length()
+    # bitshifting to find the next power of two greater than or equal to the length of the data
+    paddedSignalLength: int = 1 if (lengthOfData <= 0) else 1 << maxDecompositionLevel
+
+
+    # extend to get 2^n length using symmetric reflection padding
+    if paddedSignalLength > lengthOfData:
+        # Calculate how much total padding is needed
+        totalPaddingNeeded = paddedSignalLength - lengthOfData
+        
+        # Split the padding between left and right sides
+        leftPaddingLength = totalPaddingNeeded // 2
+        rightPaddingLength = totalPaddingNeeded - leftPaddingLength
+        
+        # pad the signal, 'reflect' mode mirrors the edge data accurately
+        paddedSignalData = pad(
+            data, 
+            (leftPaddingLength, rightPaddingLength), 
+            mode='reflect'
+        )
+        
+        if useError:
+            paddedNoiseVariance = pad(
+                varianceError, 
+                (leftPaddingLength, rightPaddingLength), 
+                mode='reflect'
+            )
+
+    # initialize the fall-back noise estimate to 1.0
+    estimatedNoiseSTD: float = 1.
+
+    if (estimateNoise):
+        # calculate the first difference of the signal to estimate noise
+        signalFirstDifference: ndarray = abs(diff(paddedSignalData))
+
+        # estimate the noise standard deviation using the median absolute deviation (MAD) method
+        if (useError):
+            squaredVarianceSum: ndarray = (
+                paddedNoiseVariance[1:] ** 2 + paddedNoiseVariance[: -1] ** 2
+                )
+            propagatedNoiseSTD: ndarray = sqrt(0.5 * squaredVarianceSum)
+
+            weightedDifferences: ndarray = signalFirstDifference / propagatedNoiseSTD
+            estimatedNoiseSTD = 1.05 * median(weightedDifferences)
+        else:
+            estimatedNoiseSTD = 1.05 * median(signalFirstDifference)
+
+    # compute and remove the baseline offset of the signal to center it around zero
+    signalMeanOffset: float = paddedSignalData.mean()
+    paddedSignalData  -=  signalMeanOffset
+
+    # initialize arrays for the approximation coefficients and the reconstructed signal
+    levelApproximationCoefficients: ndarray = empty(
+        paddedSignalLength,
+        dtype = floatType)
+    reconstructedSignal: ndarray = full(
+        paddedSignalLength,
+        signalMeanOffset,
+        dtype = floatType)
+    
+    # compute the cumulative sum of the padded signal data for the Haar transform
+    paddedSignalData.cumsum(out = paddedSignalData)
+
+    if (useError):
+        # calculate the variance cumulative sum
+        paddedNoiseVariance.cumsum(out = paddedNoiseVariance)
+        levelVarianceCoefficients: ndarray = empty(
+            paddedSignalLength,
+            dtype = floatType)
+
+    # calculate the squared noise variance threshold for denoising
+    squaredNoiseVarianceThreshold: float = (
+        (2.0 * log(2.0)) 
+        * ((thresholdFactor * estimatedNoiseSTD)
+        * (thresholdFactor * estimatedNoiseSTD))
+        )
+    for decompositionLevelIndex in range(maxDecompositionLevel):
+        # calculate scale using bitshifting
+        waveletScaleBlockWidth: int = 1 << (maxDecompositionLevel - decompositionLevelIndex - 1)
+        twoScale: int = 2 * waveletScaleBlockWidth
+
+        # precalculate the inverse squared scale
+        inverseSquaredScale: float = 1.0 / (twoScale * twoScale)
+
+        # Forward tranform
+        levelApproximationCoefficients[:-twoScale] = (
+            2 * paddedSignalData[waveletScaleBlockWidth:-waveletScaleBlockWidth]
+            - paddedSignalData[:-twoScale]
+            - paddedSignalData[twoScale:]
+        )
+        levelApproximationCoefficients[-twoScale:-waveletScaleBlockWidth] = (
+            2 * paddedSignalData[-waveletScaleBlockWidth:]
+            - paddedSignalData[-twoScale:-waveletScaleBlockWidth]
+            - paddedSignalData[:waveletScaleBlockWidth]
+            - paddedSignalData[-1]
+        )
+        levelApproximationCoefficients[-waveletScaleBlockWidth:] = (
+            2 * paddedSignalData[:waveletScaleBlockWidth]
+            - paddedSignalData[-waveletScaleBlockWidth:]
+            - paddedSignalData[waveletScaleBlockWidth:twoScale]
+            + paddedSignalData[-1]
+        )
+
+        # level-dependent variance calculation
+        if (useError):
+            levelVarianceCoefficients[:-twoScale] = (
+                varianceError[twoScale:] - varianceError[:-twoScale]
+            )
+            levelVarianceCoefficients[-twoScale:] = (
+                varianceError[:twoScale] + varianceError[-1] - varianceError[-twoScale:]
+            )
+        else:
+            # avoid allocating a whole array if the variance is uniform scalar
+            levelVarianceCoefficients: int = twoScale
+
+        # denoising thresholds
+        thresholdLimit: float = (
+            squaredNoiseVarianceThreshold * decompositionLevelIndex * levelVarianceCoefficients
+        )
+        noiseMask: ndarray = (
+            (levelApproximationCoefficients * levelApproximationCoefficients) < thresholdLimit
+        )
+
+        # hard thresholding: set coefficients below the threshold to zero
+        levelApproximationCoefficients[noiseMask] = 0
+
+        if (soft):
+            signalMask: ndarray = ~noiseMask
+            survivingCoefficients: ndarray = levelApproximationCoefficients[signalMask]
+            # prevent division by zero by ensuring non-zero coefficients
+            squaredCoefficients: ndarray = (
+                survivingCoefficients * survivingCoefficients
+                + 1e-12
+            )
+            if (useError):
+                varienceTerm: ndarray = (
+                    thresholdLimit[signalMask] / squaredCoefficients
+                )
+            else:
+                varienceTerm: ndarray = (
+                    thresholdLimit / squaredCoefficients
+                )
+            # apply soft thresholding by scaling the surviving coefficients
+            levelApproximationCoefficients[signalMask] *= (
+                sqrt(1.0 - varienceTerm)
+            )
+        
+        # set all noise coefficients to zero
+        levelApproximationCoefficients[noiseMask] = 0.0
+
+
+        # reconstruction via inverse transformation
+        levelApproximationCoefficients.cumsum(out = levelApproximationCoefficients)
+
+        # pre-calculate internal difference blocks to keep array operations vectorized
+        diffMain: ndarray = (
+            2 * levelApproximationCoefficients[waveletScaleBlockWidth:-waveletScaleBlockWidth]
+            - levelApproximationCoefficients[:-twoScale]
+            - levelApproximationCoefficients[twoScale:]
+        )
+        diffLeft: ndarray = (
+            2 * levelApproximationCoefficients[-waveletScaleBlockWidth:]
+            - levelApproximationCoefficients[-twoScale:-waveletScaleBlockWidth]
+            - levelApproximationCoefficients[:waveletScaleBlockWidth]
+            - levelApproximationCoefficients[-1]
+        )
+        diffRight: ndarray = (
+            2 * levelApproximationCoefficients[:waveletScaleBlockWidth]
+            - levelApproximationCoefficients[-waveletScaleBlockWidth:]
+            - levelApproximationCoefficients[waveletScaleBlockWidth:twoScale]
+            + levelApproximationCoefficients[-1]
+        )
+
+        # accumulate the results into the reconstructed signal
+        reconstructedSignal[twoScale:] += (
+            diffMain[::-1] * inverseSquaredScale
+        )
+        reconstructedSignal[waveletScaleBlockWidth:twoScale] += (
+            diffLeft[::-1] * inverseSquaredScale
+        )
+        reconstructedSignal[:waveletScaleBlockWidth] += (
+            diffRight[::-1] * inverseSquaredScale
+        )
+
+    # return the reconstructed signal, removing any padding that was added
+    return reconstructedSignal[leftPaddingLength:leftPaddingLength+lengthOfData]
+
+def haarNDWT(
+        poissonTimeSeriesData: ndarray,
+        measurementError: ndarray,
+        statisticalWeights: ndarray,
+        binSizeInSeconds: float = 1.0,
+        timeSeriesOversampleFactor: float = 32.0,
+        totalSignalRepetitions: int = 1,
+        binFactor: float = 4.0
+        ):
+    """_summary_
+
+    Args:
+        poissonTimeSeriesData (ndarray): The input (Poisson) time series data.
+        measurementError (ndarray): The measurement error data.
+        statisticalWeights (ndarray): The statistical weights data.
+        binSizeInSeconds (float, optional): The bin size in seconds of the regularly spaced time series. Defaults to 1.0.
+        timeSeriesOversampleFactor (float, optional): The over-sampling factor of the time series. Defaults to 32.0.
+        totalSignalRepetitions (int, optional): The number of times to repeat the time series. Defaults to 1.
+        binFactor (float, optional): The bin factor defining the sampling of the output data. Defaults to 4.0.
+
+    Returns:
+        Tuple[ndarray, ndarray, ndarray, ndarray, ndarray]: A tuple containing the following:
+            - Scaled lower time bounds (ndarray)
+            - Scaled upper time bounds (ndarray)
+            - Differential signal power (ndarray)
+            - Differential baseline noise power (ndarray)
+            - Differential power uncertainty (ndarray)
+    """
+    # length of the input time series
+    lengthOfData: int = len(poissonTimeSeriesData)
+    lengthOfDataPlusOne: int = lengthOfData + 1
+
+    # integral signal generation
+    integralSignalData: ndarray = empty(
+        lengthOfDataPlusOne,
+        dtype = floatType
+    )
+    cumsum(
+        poissonTimeSeriesData.astype(floatType),
+        copy = False,
+        out = integralSignalData[1:]
+    )
+
+    # integral weights generation
+    integralWeights: ndarray = empty(
+        lengthOfDataPlusOne,
+        dtype = floatType
+    )
+    cumsum(
+        statisticalWeights.astype(floatType),
+        copy = False,
+        out = integralWeights[1:]
+    )
+
+    # integral noise variance generation
+    integralNoiseVariance: ndarray = empty(
+        lengthOfDataPlusOne,
+        dtype = floatType
+    )
+    cumsum(
+        measurementError.astype(floatType) ** 2,
+        copy = False,
+        out = integralNoiseVariance[1:]
+    )
+
+    # calculate lengths allowing for the addition of a zero at the start of the cumulative sums
+    finalSignalLength: int = lengthOfData * totalSignalRepetitions + 1
+
+    # pre-alocate arrays for the tiled integral signal, weights, and noise variance
+    tiledSignalData: ndarray = empty(
+        finalSignalLength,
+        dtype = floatType
+    )
+    tiledWeights: ndarray = empty(
+        finalSignalLength,
+        dtype = floatType
+    )
+    tiledNoiseVariance: ndarray = empty(
+        finalSignalLength,
+        dtype = floatType
+    )
+
+    # copy the baseline original data into the first segment of the tiled arrays
+    tiledSignalData[:lengthOfDataPlusOne] = integralSignalData
+    tiledWeights[:lengthOfDataPlusOne] = integralWeights
+    tiledNoiseVariance[:lengthOfDataPlusOne] = integralNoiseVariance
+
+    # extract the core raw blocks excluding the initial zero for tiling
+    baseSignalSlice: float = integralSignalData[1:]
+    baseWeightsSlice: float = integralWeights[1:]
+    baseNoiseVarianceSlice: float = integralNoiseVariance[1:]
+
+    # get the final value of the original cumulative blocks to use as multipliers for tiling
+    signalStrideOffset: float = integralSignalData[-1]
+    weightsStrideOffset: float = integralWeights[-1]
+    noiseVarianceStrideOffset: float = integralNoiseVariance[-1]
+
+    # vectorised population of the tiled arrays
+    for repetitionIndex in range(1, totalSignalRepetitions):
+        startIndex: int = repetitionIndex * lengthOfDataPlusOne
+        endIndex: int = startIndex + lengthOfData
+
+        # broadcast the the cumulative offset into the preallocated slice
+        tiledSignalData[startIndex:endIndex] = (
+            baseSignalSlice + repetitionIndex * signalStrideOffset
+        )
+        tiledWeights[startIndex:endIndex] = (
+            baseWeightsSlice + repetitionIndex * weightsStrideOffset
+        )
+        tiledNoiseVariance[startIndex:endIndex] = (
+            baseNoiseVarianceSlice + repetitionIndex * noiseVarianceStrideOffset
+        )
+
+    # TODO rename for clarity remove later if either this or lengthOfData aren't modified
+    activeSignalLength: int = lengthOfData
+
+    # find the maximum wavelet scale index using the bit length of the active signal length minus one
+    maximumWaveletScaleIndex: int = (activeSignalLength - 1).bit_length()
+
+    # boundary guard checks
+    if binFactor <= 0:
+        binFactor = 1.0
+    if timeSeriesOversampleFactor < binFactor:
+        timeSeriesOversampleFactor = binFactor
+
+    if binFactor < timeSeriesOversampleFactor:
+        # generate core dyadic scales
+        coreDyadicScales: ndarray = 1 << arange(
+            maximumWaveletScaleIndex,
+            dtype = intType)
+
+        # generate intermediate fractional scales
+        fractionalExponents: ndarray = arange(
+            maximumWaveletScaleIndex * binFactor,
+            dtype = floatType
+        )
+
+        # force intermediate scales to the nearest even integer
+        oversampledIntermediateScales: ndarray = (
+            2.0 * round(
+                (2.0 ** fractionalExponents) / 2.0)
+        )
+
+        # merge the core dyadic scales and the oversampled intermediate scales, sort them, and remove duplicates
+        combinedScales: ndarray = hstack(
+            (coreDyadicScales, oversampledIntermediateScales).astype(intType)
+        )
+        waveletScaleBlockWidths: ndarray = unique(combinedScales)
+
+        # filter with bitwise operations
+        validScalesMask: ndarray = (
+            (waveletScaleBlockWidths > 0)
+            & ((waveletScaleBlockWidths << 1) <= activeSignalLength)
+        )
+        waveletScaleBlockWidths = waveletScaleBlockWidths[validScalesMask]
+
+
+    # bitwise generation of core dyadic scales
+    baseDyadicScales: ndarray = 1 << arange(
+        maximumWaveletScaleIndex,
+        dtype = intType
+    )
+
+    # vectorised generation of intermediate oversampled scales
+    fractionalOversampleExponents: ndarray = arange(
+        maximumWaveletScaleIndex * timeSeriesOversampleFactor,
+        dtype = floatType
+    ) / timeSeriesOversampleFactor
+
+    # force intermediate scales to the nearest even integer
+    oversampledIntermediateScales: ndarray = (
+        2.0 * round(
+            (2.0 ** fractionalOversampleExponents) / 2.0
+        )
+    )
+
+    # merge and sort
+    combinedScalesVector: ndarray = hstack(
+        (baseDyadicScales, oversampledIntermediateScales)
+        ).astype(intType)
+    cleanedUniqueScales: ndarray = unique(combinedScalesVector)
+
+    # filter with bitwise operations to ensure valid scales
+    validScaleBoundsMask: ndarray = (
+        (cleanedUniqueScales > 0)
+        & ((cleanedUniqueScales << 1) <= activeSignalLength)
+    )
+    cleanedUniqueScales: ndarray = cleanedUniqueScales[validScaleBoundsMask]
+
+    if binFactor >= timeSeriesOversampleFactor:
+        waveletScaleBlockWidths = cleanedUniqueScales.copy()
+
+    # number of scales to be used in the analysis
+    totalWaveletScales: int = len(waveletScaleBlockWidths)
+
+    # preallocate arrays for the power spectrum, baseline noise power spectrum, and power spectrum variance
+    signalPowerSpectrum: ndarray = empty(
+        totalWaveletScales,
+        dtype = floatType
+    )
+    baselineNoisePowerSpectrum: ndarray = empty(
+        totalWaveletScales,
+        dtype = floatType
+    )
+    powerSpectrumVariance: ndarray = empty(
+        totalWaveletScales,
+        dtype = floatType
+    )
+
+    # non-decimated forward Haar wavelet transform
+    for scaleIndex in range(totalWaveletScales):
+        # extract the block width for the current scale
+        waveletScaleBlockWidth: int = waveletScaleBlockWidths[scaleIndex]
+
+        twoScale: int = waveletScaleBlockWidth << 1
+        squaredScaleBlockWidth: int = float(waveletScaleBlockWidth * waveletScaleBlockWidth)
+
+        # calculate the boundary correction for the active window
+        validWindowCount: float = float(activeSignalLength - twoScale + 1)
+        boundaryCorrectionFactor: float = activeSignalLength / validWindowCount
+
+        # pre-cache slices
+        sliceStart: ndarray = integralSignalData[twoScale:activeSignalLength + 1]
+        sliceMiddle: ndarray = integralSignalData[waveletScaleBlockWidth:activeSignalLength - waveletScaleBlockWidth + 1]
+        sliceEnd: ndarray = integralSignalData[:validWindowCount]
+
+        # non-decimated calculation and squaring of the Haar wavelet coefficients
+        waveletCoefficients: ndarray = (
+            sliceStart - (sliceMiddle << 1) + sliceEnd
+        )
+        squaredWaveletCoefficients: ndarray = waveletCoefficients * waveletCoefficients
+
+        # variance and weight window slicing
+        waveletVarianceWindows: ndarray = (
+            integralNoiseVariance[twoScale:activeSignalLength + 1]
+            - integralNoiseVariance[:validWindowCount]
+        )
+        normalisedLocalWeights: ndarray = (
+            (integralWeights[twoScale:activeSignalLength + 1]
+            - integralWeights[:validWindowCount])
+            / float(twoScale)
+        )
+        meanLocalWeights: float = normalisedLocalWeights.mean()
+
+        # spectrum accumulation
+        # compute inverse constants
+        inverseScaleWeightDenominator: float = (
+            1.0 / (squaredScaleBlockWidth * meanLocalWeights)
+        )
+
+        # calculate final power arrays element-wise
+        weightedSignalPower: float = (
+            squaredWaveletCoefficients * normalisedLocalWeights
+        ).sum()
+        signalPowerSpectrum[scaleIndex] = (
+            weightedSignalPower * boundaryCorrectionFactor * inverseScaleWeightDenominator
+        )
+        
+        weightedNoisePower: float = (
+            waveletVarianceWindows * normalisedLocalWeights
+        ).sum()
+        currentNoiseSpectrum: float = (
+            weightedNoisePower * boundaryCorrectionFactor * inverseScaleWeightDenominator
+        )
+        baselineNoisePowerSpectrum[scaleIndex] = currentNoiseSpectrum
+
+        # variance vector calculation
+        varianceWindowProducts: ndarray = (
+            waveletVarianceWindows * normalisedLocalWeights
+        )
+        squaredVarianceWindowProducts: float = (
+            varianceWindowProducts * varianceWindowProducts
+        ).sum()
+
+        # consolidate trailing operations
+        inverseSquaredMeanWeight: float = 1.0 / (meanLocalWeights * meanLocalWeights)
+        varianceTerm: float = (
+            (squaredVarianceWindowProducts / squaredScaleBlockWidth * inverseSquaredMeanWeight)
+            + (0.5 * currentNoiseSpectrum)
+        )
+
+        powerSpectrumVariance[scaleIndex] = (
+            (varianceTerm * (boundaryCorrectionFactor * boundaryCorrectionFactor))
+            / float(waveletScaleBlockWidth)
+        )
+
+    # create shifted overlapping views across valid scale bands
+    lowerBoundScales: ndarray = waveletScaleBlockWidths[: - 1] # tracks [0 to N-1]
+    upperBoundScales: ndarray = waveletScaleBlockWidths[1:] # tracks [1 to N]
+
+    # calculate the number of adjacent scale transitions pairs
+    adjacentScalePairCount: int = len(lowerBoundScales)
+
+    # allocate arrays for the differential power spectrum calculations
+    differentialSignalPower: ndarray = empty(adjacentScalePairCount, dtype = floatType)
+    differentialBaselineNoisePower: ndarray = empty(adjacentScalePairCount, dtype = floatType)
+    differentialPowerUncertainty: ndarray = empty(adjacentScalePairCount, dtype = floatType)
+
+    # scalar constant multiplier
+    varianceReplicationMultiplier: float = float(totalSignalRepetitions + 1)
+
+    for scalePairIndex in range(adjacentScalePairCount):
+        # filter with bitwise AND
+        lowerLimit: int = lowerBoundScales[scalePairIndex]
+        upperLimit: int = upperBoundScales[scalePairIndex]
+        matchingScaleMask: ndarray = (
+            (baseDyadicScales >= lowerLimit)
+            & (baseDyadicScales < upperLimit)
+        )
+
+        # count the number of matching scales
+        matchingScaleCount: int = count(matchingScaleMask)
+
+        if (matchingScaleCount > 0):
+            # extract matching subsets
+            matchingScales: ndarray = baseDyadicScales[matchingScaleMask]
+            inverseCount: float = 1.0 / float(matchingScaleCount)
+
+            # find the minimum and maximum scales in the matching subset
+            lowerBoundScales[scalePairIndex] = matchingScales.min()
+            upperBoundScales[scalePairIndex] = matchingScales.max()
+
+            # accumulate the differential power and baseline noise power spectra
+            differentialSignalPower[scalePairIndex] = (
+                signalPowerSpectrum[matchingScaleMask].sum() * inverseCount
+            )
+            differentialBaselineNoisePower[scalePairIndex] = (
+                baselineNoisePowerSpectrum[matchingScaleMask].sum() * inverseCount
+            )
+
+            # consolidate the uncertainty
+            totalScaledVariance: float = (
+                powerSpectrumVariance[matchingScaleMask].sum() * varianceReplicationMultiplier
+            )
+            differentialPowerUncertainty[scalePairIndex] = (
+                sqrt(totalScaledVariance * inverseCount)
+            )
+
+    # return the results scaled by the bin size in seconds
+    scaledLowerTimeBounds: ndarray = lowerBoundScales.astype(floatType) * binSizeInSeconds
+    scaledUpperTimeBounds: ndarray = upperBoundScales.astype(floatType) * binSizeInSeconds
+
+    return (
+        scaledLowerTimeBounds,
+        scaledUpperTimeBounds,
+        differentialSignalPower,
+        differentialBaselineNoisePower,
+        differentialPowerUncertainty
+    )
+

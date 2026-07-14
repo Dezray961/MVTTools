@@ -82,17 +82,18 @@ preProcessingConfig:
 # ==========================================================================================
 mvtAnalysisConfig:
   # Analysis settings
-  numberOfSimulations: 100 # number of Monte Carlo simulations to run
   timeWindowSize: 0.3 # time window size for MVT analysis
-  transformType: "haar" # transform type for MVT analysis, options: "haar", others are not yet implemented
   signalToNoiseThreshold: 5.0 # signal-to-noise threshold
   significanceSigmaThreshold: 3.0 # significance sigma threshold for power over background noise
 
-  thresholdSettings:
+  haarDenoiseSettings:
     # Threshold settings
-    thresholdMethod: "hard" # threshold method, options: "hard", "soft"
-    thresholdScaleFactor: 0.5 # scale factor for threshold coefficients
-    backgroundNoiseModel: "poisson" # background noise model, options: "poisson", "gaussian" (gaussian is not yet implemented)
+    thresholdSoft: False # if true, uses soft thresholding; if false, uses hard thresholding
+    thresholdScaleFactor: 1.0 # scale factor for threshold coefficients
+    estimateNoise: False # if true, estimates noise from the data
 
+  haarNDWTSettings:
+    # NDWT settings
+    
   
 

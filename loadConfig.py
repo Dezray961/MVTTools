@@ -48,14 +48,14 @@ def getInitialBinSize(
         float: The initial bin size for the specified source.
     """
     match source:
-        case "Swift":
+        case "swift":
             return config.preProcessingConfig.swiftBATConfig.processing.initialBinSize
-        case "Fermi":
+        case "fermi":
             return config.preProcessingConfig.fermiGMBConfig.processing.initialBinSize
-        case "SVOM":
+        case "svom":
             return config.preProcessingConfig.svomConfig.processing.initialBinSize
         case _:
-            raise ValueError(f"Unknown source: {source}. Valid options are 'Swift', 'Fermi', 'SVOM'.")
+            raise ValueError(f"Unknown source: {source}. Valid options are 'swift', 'fermi', 'svom'.")
 
 
 if __name__ == "__main__":

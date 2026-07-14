@@ -12,6 +12,7 @@ from scipy.optimize import minimize_scalar
 from warnings import filterwarnings
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from os import cpu_count
+from loadConfig import getInitialBinSize
 
 
 # temp
@@ -33,10 +34,7 @@ intType = 'int32' #TODO add this to the config file and import it from there
 
 def haarDenoise(
         data: np.ndarray,
-        error: np.ndarray = [],
-        thresholdFactor: float = 1.0,
-        estimateNoise: bool = False,
-        soft: bool = False
+        error: np.ndarray = []
         ) -> np.ndarray:
     """
     Haar denoiser using a vectorised implementation of the Haar wavelet denoising algorithm. This function takes in a 1D array of data and applies Haar wavelet denoising to reduce noise while preserving important features in the signal.
@@ -51,6 +49,11 @@ def haarDenoise(
     Returns:
         np.ndarray: Denoised data array.
     """
+    # get configuration settings from the config file
+    thresholdFactor: float = config.mvtAnalysisConfig.haarDenoiseSettings.thresholdScaleFactor
+    estimateNoise: bool = config.mvtAnalysisConfig.haarDenoiseSettings.estimateNoise
+    soft: bool = config.mvtAnalysisConfig.haarDenoiseSettings.thresholdSoft
+
 
     data = data.astype(floatType)
     lengthOfData: int = len(data)
@@ -255,7 +258,7 @@ def haarNDWT(
         poissonTimeSeriesData: np.ndarray,
         measurementError: np.ndarray,
         statisticalWeights: np.ndarray,
-        binSizeInSeconds: float = 1.0,
+        binSizeInSeconds: float,
         timeSeriesOversampleFactor: float = 32.0,
         totalSignalRepetitions: int = 1,
         binFactor: float = 4.0
@@ -266,7 +269,7 @@ def haarNDWT(
         poissonTimeSeriesData (np.ndarray): The input (Poisson) time series data.
         measurementError (np.ndarray): The measurement error data.
         statisticalWeights (np.ndarray): The statistical weights data.
-        binSizeInSeconds (float, optional): The bin size in seconds of the regularly spaced time series. Defaults to 1.0.
+        binSizeInSeconds (float): The bin size in seconds of the regularly spaced time series.
         timeSeriesOversampleFactor (float, optional): The over-sampling factor of the time series. Defaults to 32.0.
         totalSignalRepetitions (int, optional): The number of times to repeat the time series. Defaults to 1.
         binFactor (float, optional): The bin factor defining the sampling of the output data. Defaults to 4.0.
@@ -1432,7 +1435,12 @@ def processSingleWindowWorker(
     
     try:
         # get the MVT result for the current window
-        result: tuple = haarPowerMod(windowCountsView, windowErrorsView, min_dt=binSizeInSeconds, **pipelineKeywordArguments)
+        result: tuple = haarPowerMod(
+            windowCountsView,
+            windowErrorsView,
+            minimumBinSizeSeconds = binSizeInSeconds,
+            **pipelineKeywordArguments
+            )
         
         # Extract minimumVariabilityTimescale (index 2) and minimumVariabilityTimescaleUncertainty (index 3)
         minimumVariabilityTimescaleMs: float = round(result[2] * 1000.0, 3)
@@ -1544,5 +1552,6 @@ def timeResolvedMVT(
     return windowedAnalysisResults
 
 
-def main():
-    pass
+if __name__ == "__main__":
+    from loadConfig import importConfiguration
+    config = importConfiguration()

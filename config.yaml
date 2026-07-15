@@ -102,9 +102,6 @@ mvtAnalysisConfig:
     shouldApplyStatisticalWeight: True # if true, applies statistical weight to the analysis
     outputExportFilename: "test" # output export filename for power model analysis TODO: this needs to be consistent with filestructure ect.
 
-
-
-  
   timeResolvedMVTSettings:
     # Time-resolved MVT settings
     timeWindowSize: 0.3 # time window size in seconds

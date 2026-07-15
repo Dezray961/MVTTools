@@ -26,15 +26,13 @@ filterwarnings('ignore', r'invalid value encountered')
 
 
 
-
-floatType = 'float32' #TODO add this to the config file and import it from there
-intType = 'int32' #TODO add this to the config file and import it from there
-
-
-
 def haarDenoise(
         data: np.ndarray,
-        error: np.ndarray = []
+        error: np.ndarray = [],
+        thresholdFactor: float = 1.0,
+        estimateNoise: bool = False,
+        soft: bool = False,
+        floatType: str = 'float64'
         ) -> np.ndarray:
     """
     Haar denoiser using a vectorised implementation of the Haar wavelet denoising algorithm. This function takes in a 1D array of data and applies Haar wavelet denoising to reduce noise while preserving important features in the signal.
@@ -45,16 +43,11 @@ def haarDenoise(
         thresholdFactor (float, optional): Threshold factor for denoising. Defaults to 1.0.
         estimateNoise (bool, optional): Whether to estimate noise. Defaults to False.
         soft (bool, optional): Whether to use soft thresholding. Defaults to False.
+        floatType (str, optional): Data type for computations. Defaults to 'float64'.
 
     Returns:
         np.ndarray: Denoised data array.
     """
-    # get configuration settings from the config file
-    thresholdFactor: float = config.mvtAnalysisConfig.haarDenoiseSettings.thresholdScaleFactor
-    estimateNoise: bool = config.mvtAnalysisConfig.haarDenoiseSettings.estimateNoise
-    soft: bool = config.mvtAnalysisConfig.haarDenoiseSettings.thresholdSoft
-
-
     data = data.astype(floatType)
     lengthOfData: int = len(data)
     useError: bool = True
@@ -261,9 +254,11 @@ def haarNDWT(
         binSizeInSeconds: float,
         timeSeriesOversampleFactor: float = 32.0,
         totalSignalRepetitions: int = 1,
-        binFactor: float = 4.0
+        binFactor: float = 4.0,
+        floatType: str = 'float64',
+        intType: str = 'int32'
         ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
-    """_summary_
+    """
 
     Args:
         poissonTimeSeriesData (np.ndarray): The input (Poisson) time series data.
@@ -273,6 +268,8 @@ def haarNDWT(
         timeSeriesOversampleFactor (float, optional): The over-sampling factor of the time series. Defaults to 32.0.
         totalSignalRepetitions (int, optional): The number of times to repeat the time series. Defaults to 1.
         binFactor (float, optional): The bin factor defining the sampling of the output data. Defaults to 4.0.
+        floatType (str, optional): Data type for computations. Defaults to 'float64'.
+        intType (str, optional): Data type for integer computations. Defaults to 'int32'.
 
     Returns:
         Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]: A tuple containing the following:
@@ -743,7 +740,9 @@ def haarPowerMod(
         signalToNoiseRatioThreshold: float = 3.0,
         shouldPrintDiagnostics: bool = True,
         shouldApplyStatisticalWeight: bool = True,
-        outputExportFilename: str = 'test'
+        outputExportFilename: str = 'test',
+        floatType = 'float64',
+        intType = 'int32'
         ) -> tuple[float, float, float, float, float, float, float]:
     """
     Modulated Haar wavelet power transform pipeline for time-series rates.
@@ -758,12 +757,14 @@ def haarPowerMod(
         # first pass: extract primary denoised signal
         statisticalWeightVector: np.ndarray = haarDenoise(
             emissionRateSignal,
-            emissionRateUncertainty
+            emissionRateUncertainty,
+            floatType = floatType
             )
         # second pass: further isolate the low-frequency baseline flux
         statisticalWeightVector = haarDenoise(
             statisticalWeightVector,
-            emissionRateUncertainty
+            emissionRateUncertainty,
+            floatType = floatType
         )
         # clip the statistical weight vector
         statisticalWeightVector.clip(
@@ -791,7 +792,9 @@ def haarPowerMod(
         binSizeInSeconds = minimumBinSizeSeconds,
         totalSignalRepetitions = totalSignalRepetitions,
         binFactor = outputBinningRatio,
-        timeSeriesOversampleFactor = outputBinningRatio * 8.0
+        timeSeriesOversampleFactor = outputBinningRatio * 8.0,
+        floatType = floatType,
+        intType = intType
     )
 
     # filter values that are less than zero
@@ -1463,11 +1466,8 @@ def processSingleWindowWorker(
 def timeResolvedMVT(
     counts: np.ndarray, 
     errors: np.ndarray, 
-    binSizeInSeconds: float, 
-    windowDurationSeconds: float, 
-    stepDurationSeconds: float,
-    absoluteStartTimeSeconds: float = 0.0, # <<< NEW ARGUMENT
-    **haarPowerMod_kwargs
+    source: str,
+    absoluteStartTimeSeconds: float = 0.0,
 ) -> list:
     """
     Calculates the Minimum Variability Timescale (MVT) using a sliding time window,
@@ -1476,15 +1476,30 @@ def timeResolvedMVT(
     Args:
         counts (np.ndarray): The full binned light curve data.
         errors (np.ndarray): The errors for the counts.
-        binSizeInSeconds (float): The bin width in seconds.
-        windowDurationSeconds (float): The total width of the sliding window in seconds.
-        stepDurationSeconds (float): The amount to slide the window forward in seconds.
+        source (str): The source of the data.
         absoluteStartTimeSeconds (float): The absolute start time of the counts array. Defaults to 0.0.
         **haarPowerMod_kwargs: Additional arguments to pass to haarPowerMod.
 
     Returns:
         list: A list of dictionaries containing the results for each time window.
     """
+    # get configuration settings from the config file
+    binSizeInSeconds: float = getInitialBinSize(source)
+    windowDurationSeconds: float = float(config.mvtAnalysisConfig.timeResolvedMVTSettings.timeWindowSize)
+    stepDurationSeconds: float = float(config.mvtAnalysisConfig.timeResolvedMVTSettings.stepDurationSeconds)
+    haarPowerMod_kwargs: dict = {
+        'maxBackgroundTimescale': float(config.mvtAnalysisConfig.haarPowerModSettings.maxBackgroundTimescale),
+        'totalSignalRepetitions': int(config.mvtAnalysisConfig.haarPowerModSettings.totalSignalRepetitions),
+        'shouldGeneratePlots': bool(config.mvtAnalysisConfig.haarPowerModSettings.shouldGeneratePlots),
+        'outputBinningRatio': int(config.mvtAnalysisConfig.haarPowerModSettings.outputBinningRatio),
+        'shouldVerifyZeroBaseline': bool(config.mvtAnalysisConfig.haarPowerModSettings.shouldVerifyZeroBaseline),
+        'scalingAdjustmentFactor': float(config.mvtAnalysisConfig.haarPowerModSettings.scalingAdjustmentFactor),
+        'signalToNoiseRatioThreshold': float(config.mvtAnalysisConfig.signalToNoiseThreshold),
+        'shouldPrintDiagnostics': bool(config.mvtAnalysisConfig.haarPowerModSettings.shouldPrintDiagnostics),
+        'shouldApplyStatisticalWeight': bool(config.mvtAnalysisConfig.haarPowerModSettings.shouldApplyStatisticalWeight),
+        'outputExportFilename': str(config.mvtAnalysisConfig.haarPowerModSettings.outputExportFilename)
+    }
+
     # convert physical time into integer bin metrics
     windowDurationBins = int(
         round(windowDurationSeconds / binSizeInSeconds)

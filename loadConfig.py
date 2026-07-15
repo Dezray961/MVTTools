@@ -49,11 +49,11 @@ def getInitialBinSize(
     """
     match source:
         case "swift":
-            return config.preProcessingConfig.swiftBATConfig.processing.initialBinSize
+            return float(config.preProcessingConfig.swiftBATConfig.processing.initialBinSize)
         case "fermi":
-            return config.preProcessingConfig.fermiGMBConfig.processing.initialBinSize
+            return float(config.preProcessingConfig.fermiGMBConfig.processing.initialBinSize)
         case "svom":
-            return config.preProcessingConfig.svomConfig.processing.initialBinSize
+            return float(config.preProcessingConfig.svomConfig.processing.initialBinSize)
         case _:
             raise ValueError(f"Unknown source: {source}. Valid options are 'swift', 'fermi', 'svom'.")
 

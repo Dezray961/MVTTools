@@ -48,6 +48,9 @@ preProcessingConfig:
     # Processing settings
     processing:
       initialBinSize: 100e-6 # initial bin size
+      positionTolerance: 0.01 # absolute tolerance for position matching in degrees
+      fullBurst: False # if true, extracts the full burst light curve, otherwise extracts a slice
+      sliceDuration: 10.0 # duration of the slice in seconds, only used if fullBurst is False
 
 
   # ======================================================================================

@@ -3,15 +3,14 @@ from heasoftpy import Config, fkeyprint, bateconvert, batmaskwtevt, batbinevt, f
 from contextlib import chdir
 from swiftDataTools.swiftBATCatalogueGRB import getObservationID, importData, getCoordinates, getStartStopTime
 from pathlib import Path
-from shutil import move
 from astropy.io import fits
+import numpy as np
 
 class ProcessSwiftData:
     """Class to process Swift BAT data for a given GRB. This class handles the processing of Swift BAT data for a given GRB, including checking and applying gain correction, checking and applying mask weighting, extracting light curves for different time periods, and converting the light curve data into CSV files. It has the ability to process a custom time range, however this will require the user to call methods from outside the class."""
     def __init__(
             self,
-            GRBName: str,
-            energyBins: str = "15-350"
+            GRBName: str
             )-> None:
         """Constructor for `ProcessSwiftData` class. Runs a complete pipeline to convert data from Swift BAT raw data to a standardised CSV file. Requires the data to exist in `/data/reproc/{observationID}/bat/`
 
@@ -37,13 +36,16 @@ class ProcessSwiftData:
         Config.allow_failure = False
 
         self.GRBName = GRBName
-        self.energyBins = energyBins
+        self.energyBins = config.preProcessingConfig.swiftBATConfig.download.energyRange
         self.__data, self.__columnNames = importData("swiftDataTools/summary_general.csv")
         self.__triggerID: str = getObservationID(
             GRBName,
             self.__data,
             isTrigID=False
             )
+
+        # find the right ascension and declination of the GRB from the summary_general.csv file.
+        self.__rightAscension, self.__declination = getCoordinates(self.GRBName, self.__data)
 
         # create the output directory if it does not exist
         Path(f"data/processed/{self.GRBName}").mkdir(parents=True, exist_ok=True)
@@ -54,6 +56,9 @@ class ProcessSwiftData:
             print(f"Processing data for {GRBName}...")
             self.__eventFilename: str = f"sw{self.__triggerID}bevshsp_uf.evt.gz"
             
+            # read the event FITS file using astropy.io.fits. 
+            self.__eventFITS: fits.HDUList = fits.open(self.__eventFilename)
+
             # check if the gain correction has been applied to the event file.
             if not self.__checkGain():
                 # correct the gain if it has not been applied.
@@ -76,12 +81,24 @@ class ProcessSwiftData:
             print(f"Stop time: {self.__stopTime} seconds")
             print(f"Burst duration: {self.__burstDuration} seconds")
 
+            # get the pre and post bust midpoints 
+            self.__preBurstMidpoint: float = (
+                self.__startTime - self.__burstDuration
+                )
+            self.__postBurstMidpoint: float = (
+                self.__stopTime + self.__burstDuration
+                )
+
+
             # extract the light curves
-            for period in range(2):
-                self.extractLightCurve(period)
+            for period in range(3):
+                self.__extractLightCurve(period)
 
             # TODO
             # load the light curve data from the output files using astropy.io.fits
+            self.__preBurstLightCurve: fits.HDUList = fits.open("outputPreBurst.lc")
+            self.__burstLightCurve: fits.HDUList = fits.open("outputBurst.lc")
+            self.__postBurstLightCurve: fits.HDUList = fits.open("outputPostBurst.lc")
 
             # generate the spectrum for the burst period
 
@@ -146,27 +163,16 @@ class ProcessSwiftData:
             bool: True if the gain correction has been applied, False if the gain correction has not been applied
         """
         print("Checking gain correction")
-        output = fkeyprint(
-            infile = self.__eventFilename,
-            keynam = "GAIN"
-            )
-        print(output.stdout)
-        bools:list[bool] = []
-        for line in output.stdout.splitlines():
-            if line.startswith("GAINAPP"):
-                if "T" in line or "Gain correction has been applied" in line:
-                    bools.append(True)
-                else:
-                    bools.append(False)
-            if line.startswith("GAINMETH"):
-                if "FIXEDDAC" in line:
-                    bools.append(True)
-                else:
-                    bools.append(False)
-        if all(bools):
+        # get the GAINAPP and GAINMETH keywords from the event file header
+        GAINAPP: bool = self.__eventFITS[1].header['GAINAPP']
+        GAINMETH: str = self.__eventFITS[1].header['GAINMETH']
+
+        if GAINAPP and GAINMETH == "FIXEDDAC":
             print("Gain correction already applied")
-        
-        return all(bools)
+            return True
+        else:
+            print("Gain correction has not been applied.")
+            return False
 
 
     def __correctGain(
@@ -231,32 +237,31 @@ class ProcessSwiftData:
                 bool: True if the mask has been applied, False if the mask has not been applied
             """
             print("Checking mask weighting")
-            output = fkeyprint(
-                infile = self.__eventFilename,
-                keynam = "BAT_"
-            )
-            print(output.stdout)
-            bools:list[bool] = []
-            for line in output.stdout.splitlines():
-                if line.startswith("BAT_RA"):
-                    splitLine: str = line.split('=')[1].strip().split('/')[0].strip()
-                    try:
-                        # do not use this value for the ra and dec as if the mask is incorrectly applied, these values will be incorrect.
-                        float(splitLine)
-                        bools.append(True)
-                    except:
-                        bools.append(False)
-                if line.startswith("BAT_DEC"):
-                    splitLine: str = line.split('=')[1].strip().split('/')[0].strip()
-                    try:
-                        float(splitLine)
-                        bools.append(True)
-                    except:
-                        bools.append(False)
-            if all(bools):
-                print("Mask weighting already applied")
+            # get the right ascension and declination from the event file header
+            rightAscension: float = self.__eventFITS[1].header['BAT_RA']
+            declination: float = self.__eventFITS[1].header['BAT_DEC']
+
+            # load the absolute tolerance for position matching from the config file
+            absoluteTolerance: float = float(config.preProcessingConfig.swiftBATConfig.processing.positionTolerance)
+
+            # check if the right ascension and declination are within the absolute tolerance of the expected values
+            rightAscensionMatch: bool = np.isclose(
+                rightAscension,
+                self.__rightAscension,
+                atol=absoluteTolerance
+                )
+            declinationMatch: bool = np.isclose(
+                declination,
+                self.__declination,
+                atol=absoluteTolerance
+                )
             
-            return all(bools)
+            if rightAscensionMatch and declinationMatch:
+                print("Right ascension and declination match expected values, mask weighting already applied")
+                return True
+            else:
+                print("Right ascension and declination do not match expected values, mask weighting has not been applied")
+                return False
 
 
         def checkMaskVersion(
@@ -271,25 +276,15 @@ class ProcessSwiftData:
                 bool: _description_
             """
             print("Checking batmaskwtevt version")
-            output = fkeyprint(
-                infile = self.__eventFilename,
-                keynam = "BATCREAT"
-            )
-            print(output.stdout)
-            bools:list[bool] = []
-            for line in output.stdout.splitlines():
-                if line.startswith("BATCREAT"):
-                    if "batmaskwtevt" in line:
-                        version: float = float(line.split('batmaskwtevt')[1].strip().split(' ')[0].strip('\''))
-                        if version >= 1.16:
-                            bools.append(True)
-                            print(f"batmaskwtevt version is {version}>= 1.16") 
-                        else:
-                            bools.append(False)
-                            print(f"batmaskwtevt version is {version}< 1.16")
-                    else:
-                        bools.append(False)
-            return all(bools)
+            # get the BATCREAT keyword from the event file header
+            BATCREAT: str = self.__eventFITS[1].header['BATCREAT']
+            version: float = float(BATCREAT.split(' ')[1].strip())
+            if version >= 1.16:
+                print(f"batmaskwtevt version is {version} >= 1.16")
+                return True
+            else:
+                print(f"batmaskwtevt version is {version} < 1.16")
+                return False
 
 
         bools: list[bool] = []
@@ -326,9 +321,6 @@ class ProcessSwiftData:
             self.__unzipFile(self.__eventFilename)
             self.__eventFilename = self.__eventFilename.replace(".gz", "")
 
-        # find the right ascension and declination of the GRB from the summary_general.csv file.
-        self.__rightAscension, self.__declination = getCoordinates(self.__triggerID, self.__data)
-
         # run the batmaskwtevt command to apply the mask.
         output = batmaskwtevt(
             infile = self.__eventFilename,
@@ -348,7 +340,7 @@ class ProcessSwiftData:
         self.__eventFilename = self.__eventFilename + ".gz"
 
 
-    def extractLightCurve(
+    def __extractLightCurve(
             self,
             period: int,
             customTimeRange: tuple[float, float] = None
@@ -366,18 +358,26 @@ class ProcessSwiftData:
         match period:
             case 0: # pre-burst
                 fileName: str = "outputPreBurst.lc"
-                startTime: float = self.__startTime - self.__burstDuration
-                stopTime: float = self.__startTime
+                startTime: float = self.__preBurstMidpoint - 1.0
+                stopTime: float = self.__preBurstMidpoint + 1.0
                 print("Extracting pre-burst uniform light curve")
             case 1: # burst
                 fileName: str = "outputBurst.lc"
-                startTime: float = self.__startTime
-                stopTime: float = self.__stopTime
-                print("Extracting burst uniform light curve")
+                if config.preProcessingConfig.swiftBATConfig.processing.fullBurst:
+                    startTime: float = self.__startTime - 2.0
+                    stopTime: float = self.__stopTime + 2.0
+                    print("Extracting full burst uniform light curve")
+                else:
+                    startTime: float = self.__startTime - 2.0
+                    stopTime: float = (
+                        self.__startTime
+                        + config.preProcessingConfig.swiftBATConfig.processing.sliceDuration - 2.0
+                        )
+                    print("Extracting burst uniform light curve")
             case 2: # post-burst
                 fileName: str = "outputPostBurst.lc"
-                startTime: float = self.__stopTime
-                stopTime: float = self.__stopTime + self.__burstDuration
+                startTime: float = self.__postBurstMidpoint - 1.0
+                stopTime: float = self.__postBurstMidpoint + 1.0
                 print("Extracting post-burst uniform light curve")
             case 3: # custom
                 if customTimeRange is None:
@@ -394,7 +394,7 @@ class ProcessSwiftData:
             infile = self.__eventFilename,
             outfile = fileName,
             outtype = "LC",
-            timedel = 100e-6,
+            timedel = config.preProcessingConfig.swiftBATConfig.processing.initialBinSize,
             timebinalg = "u",
             energybins = self.energyBins,
             detmask = f"../hk/sw{self.__triggerID}bdqcb.hk.gz",
@@ -411,6 +411,8 @@ class ProcessSwiftData:
 
 
 if __name__ == "__main__":
+    from loadConfig import importConfiguration
+    config = importConfiguration("config.yaml")
     GRBName: str = "GRB080319B"
     data: ProcessSwiftData = ProcessSwiftData(GRBName)
 

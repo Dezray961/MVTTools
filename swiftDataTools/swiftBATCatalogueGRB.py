@@ -126,9 +126,9 @@ def importData(filename: str) -> tuple[list[list[str]], list[str]]:
 
 
 # function to get the coordinates of a GRB given its Trig_ID
-def getCoordinates(trigID: str, data: list[list[str]]) -> tuple[float, float]:
+def getCoordinates(GRBName: str, data: list[list[str]]) -> tuple[float, float]:
     for row in data:
-        if row[1] == int(trigID):
+        if row[0] == GRBName:
             return float(row[4]), float(row[5])
         
 

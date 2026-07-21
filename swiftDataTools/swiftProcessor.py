@@ -1,10 +1,12 @@
-from os import system, environ, getcwd, listdir, path as osPath
-from heasoftpy import Config, fkeyprint, bateconvert, batmaskwtevt, batbinevt, fdump
+from os import system, environ, getcwd, makedirs
+from os.path import exists, join, abspath
+from heasoftpy import Config, bateconvert, batmaskwtevt, batbinevt, batupdatephakw, batphasyserr, batdrmgen, HSPTask
 from contextlib import chdir
 from swiftDataTools.swiftBATCatalogueGRB import getObservationID, importData, getCoordinates, getStartStopTime
 from pathlib import Path
 from astropy.io import fits
 import numpy as np
+import subprocess
 
 class ProcessSwiftData:
     """Class to process Swift BAT data for a given GRB. This class handles the processing of Swift BAT data for a given GRB, including checking and applying gain correction, checking and applying mask weighting, extracting light curves for different time periods, and converting the light curve data into CSV files. It has the ability to process a custom time range, however this will require the user to call methods from outside the class."""
@@ -30,10 +32,23 @@ class ProcessSwiftData:
         # Check if the HEADAS environment variable is set. If it is not set, print an error message and exit the program. This is important because the HEASoft tools require the HEADAS environment variable to be set in order to function properly. If the variable is not set, the program will not be able to find the necessary tools and will fail to run. By checking for the variable at the beginning of the program, we can ensure that the user is aware of the issue and can take steps to fix it before proceeding with the data processing.
         self.__headasPath = environ.get("HEADAS")
         if self.__headasPath:
-            environ["PFILES"] = f"{environ['HOME']}/pfiles;{self.__headasPath}/syspfiles"
+            # setup local separate writeable parameter directory
+            local_pfiles = abspath("./pfiles")
+            makedirs(local_pfiles, exist_ok=True)
+            environ["PFILES"] = f"{local_pfiles};{self.__headasPath}/syspfiles"
+            
+            # inject HEASoft binaries directly into Python's active execution path
+            environ["PATH"] = f"{join(self.__headasPath, 'bin')}:{environ.get('PATH', '')}"
+            environ["LD_LIBRARY_PATH"] = f"{join(self.__headasPath, 'lib')}:{environ.get('LD_LIBRARY_PATH', '')}"
         else:
             raise EnvironmentError("Error: HEADAS environment variable not found. Did you initialize HEASoft?")
         Config.allow_failure = False
+
+        # set the CALDB environment variables
+        self.__caldbPath = environ.get("CALDB")
+        if self.__caldbPath:
+            environ["CALDBCONFIG"] = join(self.__caldbPath, 'software', 'tools', 'caldb.config')
+            environ["CALDBALIAS"] = join(self.__caldbPath, 'software', 'tools', 'alias_config.fits')
 
         self.GRBName = GRBName
         self.energyBins = config.preProcessingConfig.swiftBATConfig.download.energyRange
@@ -52,7 +67,6 @@ class ProcessSwiftData:
 
         # process the data using the HEASoft tools
         with chdir(f"data/reproc/{self.__triggerID}/bat/event"):
-            print(getcwd())
             print(f"Processing data for {GRBName}...")
             self.__eventFilename: str = f"sw{self.__triggerID}bevshsp_uf.evt.gz"
             
@@ -101,10 +115,10 @@ class ProcessSwiftData:
             self.__postBurstLightCurve: fits.HDUList = fits.open("outputPostBurst.lc")
 
             # generate the spectrum for the burst period
-
-            # revise the spectrum using batupdatephakw and batphasyserr
+            self.__generateSpectrum()
 
             # generate the response matrix using batdrmgen
+            self.__generateResponseMatrix()
 
             # might as well calculate the Epeak while the spectrum is being generated.
             # analyze the spectrum using XSPEC to find the Epeak
@@ -193,7 +207,7 @@ class ProcessSwiftData:
         print("Applying gain correction to file: ", self.__eventFilename)
         # find the calibration file in the hk directory. 
         self.__calibrationFile: str = f"../hk/{self.__eventFilename.replace('bevshsp_uf.evt.gz', 'bcbo01deg00ab.fits.gz')}"
-        if not osPath.exists(self.__calibrationFile):
+        if not exists(self.__calibrationFile):
             ### download the calibration file - impliment this later
             raise FileNotFoundError(f"Calibration file not found: {self.__calibrationFile}")
 
@@ -306,13 +320,13 @@ class ProcessSwiftData:
 
         # find the attitude file in the aux directory.
         self.__attitudeFile: str = f"../aux/{self.__eventFilename.replace('bevshsp_uf.evt.gz', 'sat.fits.gz')}"
-        if not osPath.exists(self.__attitudeFile):
+        if not exists(self.__attitudeFile):
             ### download the attitude file - impliment this later
             raise FileNotFoundError(f"Attitude file not found: {self.__attitudeFile}")
             
         # find the quality map file in the hk directory.
         self.__qualityMapFile: str = f"../hk/{self.__eventFilename.replace('bevshsp_uf.evt.gz', 'bdqcb.hk.gz')}"
-        if not osPath.exists(self.__qualityMapFile):
+        if not exists(self.__qualityMapFile):
             ### download the quality map file - impliment this later
             raise FileNotFoundError(f"Quality map file not found: {self.__qualityMapFile}")
 
@@ -406,8 +420,79 @@ class ProcessSwiftData:
         print(output.stdout)
 
 
+    def __subprocessRunCommand(
+            self,
+            commandString: str
+        )-> None:
+        """Runs a command string in a bash shell using subprocess.run. This is a wrapper function for subprocess.run, which is used to run commands in a bash shell. The function takes in a command string, and uses subprocess.run to run the command in a bash shell. The function does not return anything, but it will print out any output from the command to the console.
+
+        Args:
+            commandString (str): The command string to be run. This should be a valid bash command string.
+        """
+        output = subprocess.run(
+            commandString,
+            shell=True,
+            executable="/bin/bash",
+            capture_output=True,
+            text=True
+        )
+        print(f"STDOUT Log:\n{output.stdout}")
+        if output.returncode != 0:
+            print(f"Command failed with code {output.returncode}!")
+            print(f"Error Log:\n{output.stderr}")
 
 
+    def __generateSpectrum(
+            self
+        )-> None:
+        print("Generating spectrum for burst period")
+        # run batbinevt to create the spectrum for the burst period
+        output = batbinevt(
+            infile = self.__eventFilename,
+            outfile = "outputSpectrum.pha",
+            outtype = "PHA",
+            timedel = 0.0,
+            timebinalg = "u",
+            tstart = self.__startTime,
+            tstop = self.__stopTime,
+            energybins = 'CALDB:80',
+            outunits = "RATE",
+            detmask = f"../hk/sw{self.__triggerID}bdqcb.hk.gz",
+            clobber = "YES"
+        )
+        print(output.stdout)
+
+        print("Applying corrections to the spectrum")
+        # run batupdatephakw and batphasyserr to apply corrections to the spectrum
+        # currently this is done using subprocess.run to run the commands in a bash shell. 
+        # This is because the heasoftpy wrapper for batupdatephakw is throwing errors about the 
+        # CALDB environment variable not being set, even though it is set??? TODO
+        commandString = (
+            f"source {self.__headasPath}/headas-init.sh && "
+            f"batupdatephakw outputSpectrum.pha sw{self.__triggerID}bevtr.fits.gz clobber=YES"
+        )
+        self.__subprocessRunCommand(commandString)  
+
+        # Construct the bash command string, injecting your HEASoft and CALDB setup
+        commandString = (
+            f"source {self.__headasPath}/headas-init.sh && "
+            f"batphasyserr outputSpectrum.pha CALDB clobber=YES"
+        )
+        self.__subprocessRunCommand(commandString)  
+
+
+    def __generateResponseMatrix(
+            self
+        )-> None:
+        print("Generating response matrix for burst period")
+        # run batdrmgen to create the response matrix for the burst period
+        output = batdrmgen(
+            infile = "outputSpectrum.pha",
+            outfile = "outputResponse.rsp",
+            hkfile = 'NONE',
+            clobber = "YES"
+        )
+        print(output.stdout)
 
 
 if __name__ == "__main__":

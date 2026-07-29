@@ -7,54 +7,81 @@ It MUST be run in a Python 3.10 environment with XSPEC installed and configured 
 using a dedicated conda environment for this.
 """
 
-import os, csv, xspec
+import os, sys, csv, xspec
+
 
 if __name__ == "__main__":
-    # Pull parameters directly from the OS environment variables
     sliceId = int(os.environ["SLICE_ID"])
-    phaFile = os.environ["PHA_FILE"]
-    rspFile = os.environ["RSP_FILE"]
-    outputCsv = os.environ["OUTPUT_CSV"]
+    targetDir = os.environ["TARGET_DIR"]
+    
+    # convert the incoming output file path to an absolute path
+    outputCsv = os.path.abspath(os.environ["OUTPUT_CSV"])
 
-    # Suppress plots and heavy log output
+    phaFile = "outputSpectrum.pha"
+    rspFile = "outputResponse.rsp"
+
+    # global XSPEC environment flags
     xspec.Plot.device = "none"
-    xspec.Xset.chatter = 1
-    xspec.Xset.logChatter = 1
+    xspec.Xset.chatter = 0
+    xspec.Xset.logChatter = 0
+    xspec.Fit.query = "yes"
 
     try:
-        # Load data and apply BAT constraints
-        currentSpec = xspec.Spectrum(phaFile)
-        currentSpec.response = rspFile
+        os.chdir(targetDir)
+        xspec.AllData.clear()
+        xspec.AllModels.clear()
+
+        if not os.path.exists(phaFile) or not os.path.exists(rspFile):
+            print(f"CRITICAL: Required files missing in {targetDir}", flush=True)
+            sys.exit(1)
+
+        # load spectrum and apply criteria
+        currentSpec = xspec.Spectrum(dataFile=phaFile, respFile=rspFile)
         currentSpec.ignore("0.0-15.0 150.0-**")
-        currentSpec.systematic = 0.02
+        xspec.AllModels.systematic = 0.02
 
-        # Setup re-parameterised Band function
-        bandModel = xspec.Model("bndrep")
-        bandModel.alpha.values = -1.0
-        bandModel.beta.values = -2.3
-        bandModel.beta.frozen = True
-        bandModel.Epeak.values = 70.0
+        # configure grbm model using 1-based index notation
+        bandModel = xspec.Model("grbm")
+        bandModel(1).values = -1.0      # alpha
+        bandModel(2).values = -2.3      # beta
+        bandModel(2).frozen = True      # Freeze beta index
+        bandModel(3).values = 50.0      # tem (E0)
 
-        # Fit and calculate 90% error bounds on Epeak
+        # fit
         xspec.Fit.nIterations = 100
         xspec.Fit.perform()
-        xspec.Fit.error("3")
 
-        # Collect metrics
+        # calculate error bounds
+        xspec.Fit.error("1 3")
+
+        # gather metrics
         reducedChiSq = xspec.Fit.statistic / xspec.Fit.dof if xspec.Fit.dof > 0 else 0.0
-        epeakVal = bandModel.Epeak.values
-        epeakLow = bandModel.Epeak.error
-        epeakHigh = bandModel.Epeak.error
+        
+        alphaVal = bandModel(1).values[0]
+        alphaLow, alphaHigh, _ = bandModel(1).error
+        
+        temVal = bandModel(3).values[0]
+        temLow, temHigh, _ = bandModel(3).error
+
+        # Epeak = E0 * (2 + alpha)
+        epeakVal = temVal * (2.0 + alphaVal)
+        epeakLow = temLow * (2.0 + alphaLow)
+        epeakHigh = temHigh * (2.0 + alphaHigh)
         statusText = "Success"
 
     except Exception as fittingError:
         reducedChiSq, epeakVal, epeakLow, epeakHigh = 0.0, 0.0, 0.0, 0.0
         statusText = f"Failed: {str(fittingError)}"
+        print(f"FITTING EXCEPTION: {statusText}", flush=True)
 
-    # Thread-safe appending to CSV
+    # save to row
     rowResult = {
-        "sliceId": sliceId, "status": statusText, "reducedChiSq": round(reducedChiSq, 2),
-        "epeak": round(epeakVal, 2), "epeakLow": round(epeakLow, 2), "epeakHigh": round(epeakHigh, 2)
+        "sliceId": sliceId, 
+        "status": statusText, 
+        "reducedChiSq": round(reducedChiSq, 2),
+        "epeak": round(epeakVal, 2), 
+        "epeakLow": round(epeakLow, 2), 
+        "epeakHigh": round(epeakHigh, 2)
     }
 
     fileNeedsHeader = not os.path.exists(outputCsv)
@@ -63,3 +90,5 @@ if __name__ == "__main__":
         if fileNeedsHeader:
             dictWriter.writeheader()
         dictWriter.writerows([rowResult])
+        
+    print("WORKER COMPLETE: Row appended.", flush=True)

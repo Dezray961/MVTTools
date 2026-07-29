@@ -3,15 +3,15 @@ import os, time, subprocess
 # =====================================================================
 # GLOBAL CONFIGURATION - Edit these paths once for your system
 # =====================================================================
-PYTHON_310_PATH = "/home/derekpinkett/.conda/envs/XspecEnv/bin/python"
-SCRIPT_310_PATH = "/home/derekpinkett/coding/MVTTools/swiftDataTools/swiftXSPEC310.py"
-TARGET_FOLDER   = "data/reproc/00306757000/bat/event"
+PYTHON_310_PATH: str = "/home/derekpinkett/.conda/envs/XspecEnv/bin/python"
+SCRIPT_310_PATH: str = "/home/derekpinkett/coding/MVTTools/swiftDataTools/swiftXSPEC310.py"
+TARGET_FOLDER  : str = "data/reproc/00306757000/bat/event"
 
 # NEW: Explicitly specify your preferred output directory and filename
-OUTPUT_DIR      = "/home/derekpinkett/coding/MVTTools/results" 
-OUTPUT_FILENAME = "timeResolvedEpeakResults.csv"
+OUTPUT_DIR     : str = "/home/derekpinkett/coding/MVTTools/results" 
+OUTPUT_FILENAME: str = "timeResolvedEpeakResults.csv"
 
-TIMEOUT_SECONDS = 30
+TIMEOUT_SECONDS: int = 30
 # =====================================================================
 
 def testSingleFolderWithActiveTimeout():
@@ -22,25 +22,25 @@ def testSingleFolderWithActiveTimeout():
         os.makedirs(OUTPUT_DIR)
         
     # combine the directory and filename into an absolute path
-    finalCsvResult = os.path.join(OUTPUT_DIR, OUTPUT_FILENAME)
+    finalCsvResult: str = os.path.join(OUTPUT_DIR, OUTPUT_FILENAME)
     
     if os.path.exists(finalCsvResult):
         os.remove(finalCsvResult)
 
     # clone environment variables and inject the path attributes
-    testEnv = os.environ.copy()
+    testEnv: dict[str, str] = os.environ.copy()
     testEnv["SLICE_ID"] = "1"
     testEnv["TARGET_DIR"] = TARGET_FOLDER
     testEnv["OUTPUT_CSV"] = finalCsvResult
     testEnv["PYTHONUNBUFFERED"] = "1"
 
-    commandArray = [PYTHON_310_PATH, SCRIPT_310_PATH]
+    commandList: list[str] = [PYTHON_310_PATH, SCRIPT_310_PATH]
     print(f"\n--- Spawning Process (Hard Timeout Safety: {TIMEOUT_SECONDS}s) ---")
     
-    startTime = time.time()
+    startTime: float = time.time()
     try:
-        process = subprocess.Popen(
-            commandArray,
+        process: subprocess.Popen = subprocess.Popen(
+            commandList,
             env=testEnv,
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
@@ -51,12 +51,12 @@ def testSingleFolderWithActiveTimeout():
         os.set_blocking(process.stdout.fileno(), False)
         
         while True:
-            pollStatus = process.poll()
+            pollStatus: int | None = process.poll()
             
             try:
-                outputLine = process.stdout.readline()
+                outputLine: str = process.stdout.readline()
                 if outputLine:
-                    cleanLine = outputLine.strip()
+                    cleanLine: str = outputLine.strip()
                     print(f"[3.10 Output]: {cleanLine}")
                     
                     # instant kill rules
@@ -72,9 +72,9 @@ def testSingleFolderWithActiveTimeout():
                 
             # runtime verification loop
             if (time.time() - startTime) > TIMEOUT_SECONDS:
-                print(f"\n[TIMEOUT EXPIRED]: Process exceeded {TIMEOUT_SECONDS}s. Force killing...")
+                print(f"\n[TIMEOUT EXPIRED]: Process exceeded {TIMEOUT_SECONDS}s. Terminating...")
                 process.kill()
-                print("-> Process successfully killed. Kernel protected.")
+                print("-> Process terminated.")
                 return
                 
             time.sleep(0.1) 

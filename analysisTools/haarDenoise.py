@@ -138,27 +138,47 @@ if __name__ == "__main__":
         ) -> None:
         import matplotlib.pyplot as plt
 
+        # Set standard LaTeX font settings using built-in mathtext engine
+        plt.rcParams.update({
+            "text.usetex": False,            
+            "mathtext.fontset": "cm",        # Force native Computer Modern LaTeX font
+            "font.family": "serif",          # Match typical serif document layouts
+            "font.size": 10,
+            "axes.labelsize": 10,
+            "xtick.labelsize": 10,
+            "ytick.labelsize": 10,
+        })
 
-        plt.figure(figsize=(10, 6))
+        figWidthPTS = 246.0
+        figWidthINCHES = figWidthPTS / 72.27
+        heightScaleFactor = 0.8
+        figHeightINCHES = figWidthINCHES * heightScaleFactor
+
+
+        plt.figure(figsize=(figWidthINCHES, figHeightINCHES))
         plt.plot(
             data['time'],
             data['rate'],
-            label='Original Data'
+            label='Original Data',
+            color='lightgray'
             )
         plt.plot(
             data['time'],
             data['denoisedRate'],
             label='Denoised Data',
-            color='red',
-            alpha=0.5
+            color='Black',
+            linewidth=1.0
             )
         plt.xlabel('Time (s)')
         plt.ylabel('Rate (counts/s)')
-        plt.legend()
+        plt.tight_layout()
+        plt.xlim(0,60)
+        plt.ylim(-8, 17)
+
         plt.show()
 
 
-    data: LightCurveData = LightCurveData("GRB080319B")
+    data: LightCurveData = LightCurveData("GRB080319B", "swiftBAT")
     data.burstData['denoisedRate'] = haarDenoise(data.burstData)
     data.preBurstData['denoisedRate'] = haarDenoise(data.preBurstData)
     plotlightCurve(data.burstData)

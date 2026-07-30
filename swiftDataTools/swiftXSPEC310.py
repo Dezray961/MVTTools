@@ -1,94 +1,105 @@
-"""
-Process a PHA file and a RSP file with a re-parameterised Band function and output results to a CSV file.
-Takes input from environment variables for slice ID, target directory, and output CSV file.
-The script is designed to be run in a parallel processing environment where each slice of data is
-processed independently, and results are appended to a shared CSV file in a thread-safe manner.
-It MUST be run in a Python 3.10 environment with XSPEC installed and configured correctly. I recommend
-using a dedicated conda environment for this.
-"""
-
-import os, sys, csv, xspec
-
+import os
+import csv
+import sys
+import xspec
 
 if __name__ == "__main__":
-    sliceId: int = int(os.environ["SLICE_ID"])
-    targetDir: str = os.environ["TARGET_DIR"]
+    startRow = int(os.environ["START_ROW"])
+    endRow = int(os.environ["END_ROW"])
+    targetDir = os.environ["TARGET_DIR"]
+    outputCsv = os.path.abspath(os.environ["OUTPUT_CSV"])
 
-    # convert the incoming output file path to an absolute path
-    outputCsv: str = os.path.abspath(os.environ["OUTPUT_CSV"])
+    phaFile = os.path.join(targetDir, "outputSpectrum.pha")
+    rspFile = os.path.join(targetDir, "outputResponse.rsp")
 
-    phaFile: str = "outputSpectrum.pha"
-    rspFile: str = "outputResponse.rsp"
-
-    # global XSPEC environment flags
     xspec.Plot.device = "none"
     xspec.Xset.chatter = 0
     xspec.Xset.logChatter = 0
     xspec.Fit.query = "yes"
 
-    try:
-        os.chdir(targetDir)
-        xspec.AllData.clear()
-        xspec.AllModels.clear()
+    if not os.path.exists(phaFile) or not os.path.exists(rspFile):
+        print(f"CRITICAL: Files missing relative to root.", flush=True)
+        sys.exit(1)
 
-        if not os.path.exists(phaFile) or not os.path.exists(rspFile):
-            print(f"CRITICAL: Required files missing in {targetDir}", flush=True)
-            sys.exit(1)
+    localRows = []
 
-        # load spectrum and apply criteria
-        currentSpec: xspec.Spectrum = xspec.Spectrum(dataFile=phaFile, respFile=rspFile)
-        currentSpec.ignore("0.0-15.0 150.0-**")
-        xspec.AllModels.systematic = 0.02
+    for currentRow in range(startRow, endRow + 1):
+        try:
+            xspec.AllData.clear()
+            xspec.AllModels.clear()
+        except Exception:
+            pass
 
-        # configure grbm model using 1-based index notation
-        bandModel: xspec.Model = xspec.Model("grbm")
-        bandModel(1).values = -1.0      # alpha
-        bandModel(2).values = -2.3      # beta
-        bandModel(2).frozen = True      # Freeze beta index
-        bandModel(3).values = [50.0, 1.0, 1.0, 1.0, 1000.0, 1500.0]  # Enforce hard upper limit on E0
+        try:
+            type2PhaPath = f"{phaFile}{{{currentRow}}}"
+            currentSpec = xspec.Spectrum(dataFile=type2PhaPath, respFile=rspFile)
 
-        # fit
-        xspec.Fit.nIterations = 100
-        xspec.Fit.perform()
+            # --- DEFENSIVE TYPE CHECKING FOR PYXSPEC DATA TRACKS ---
+            rawRate = currentSpec.rate
+            rawExposure = currentSpec.exposure
 
-        # calculate error bounds
-        xspec.Fit.error("1 3")
+            # Isolate rate value if it's trapped in an array container
+            if isinstance(rawRate, (tuple, list)):
+                sourceRate = float(rawRate[0])
+            else:
+                sourceRate = float(rawRate)
 
-        # gather metrics
-        reducedChiSq: float = xspec.Fit.statistic / xspec.Fit.dof if xspec.Fit.dof > 0 else 0.0
-        
-        alphaVal: float = bandModel(1).values[0]
-        alphaLow, alphaHigh, _ = bandModel(1).error
-        
-        temVal: float = bandModel(3).values[0]
-        temLow, temHigh, _ = bandModel(3).error
+            # Isolate exposure value if it's trapped in a source/background tuple container
+            if isinstance(rawExposure, (tuple, list)):
+                sourceExposure = float(rawExposure[0])
+            else:
+                sourceExposure = float(rawExposure)
+            # ------------------------------------------------------
 
-        # Epeak = E0 * (2 + alpha)
-        epeakVal: float = temVal * (2.0 + alphaVal)
-        epeakLow: float = temLow * (2.0 + alphaLow)
-        epeakHigh: float = temHigh * (2.0 + alphaHigh)
-        statusText: str = "Success"
+            # Safety threshold gate to safely ignore empty pre-burst slices
+            if sourceRate <= 0.01 or sourceExposure <= 0.0:
+                raise ValueError(f"Insufficient counts or exposure: Rate={sourceRate:.2f}")
 
-    except Exception as fittingError:
-        reducedChiSq, epeakVal, epeakLow, epeakHigh = 0.0, 0.0, 0.0, 0.0
-        statusText: str = f"Failed: {str(fittingError)}"
-        print(f"FITTING EXCEPTION: {statusText}", flush=True)
+            currentSpec.ignore("0.0-15.0 150.0-**")
+            xspec.AllModels.systematic = 0.02
 
-    # save to row
-    rowResult = {
-        "sliceId": sliceId, 
-        "status": statusText, 
-        "reducedChiSq": reducedChiSq,
-        "epeak": epeakVal, 
-        "epeakLow": epeakLow, 
-        "epeakHigh": epeakHigh
-    }
+            bandModel = xspec.Model("grbm")
+            bandModel(1).values = -1.0
+            bandModel(2).values = -2.3
+            bandModel(2).frozen = True
+            bandModel(3).values = 50.0
 
-    fileNeedsHeader = not os.path.exists(outputCsv)
-    with open(outputCsv, "a", newline="") as csvFileObject:
-        dictWriter = csv.DictWriter(csvFileObject, fieldnames=rowResult.keys())
-        if fileNeedsHeader:
+            xspec.Fit.nIterations = 100
+            xspec.Fit.perform()
+            xspec.Fit.error("1 3")
+
+            reducedChiSq = xspec.Fit.statistic / xspec.Fit.dof if xspec.Fit.dof > 0 else 0.0
+            
+            # Safely pull values out of the parameter lists
+            alphaVal = bandModel(1).values[0] if isinstance(bandModel(1).values, list) else bandModel(1).values
+            alphaLow, alphaHigh, _ = bandModel(1).error
+            
+            temVal = bandModel(3).values[0] if isinstance(bandModel(3).values, list) else bandModel(3).values
+            temLow, temHigh, _ = bandModel(3).error
+
+            # Conversion math: Epeak = E0 * (2 + alpha)
+            epeakVal = temVal * (2.0 + alphaVal)
+            epeakLow = temLow * (2.0 + alphaLow)
+            epeakHigh = temHigh * (2.0 + alphaHigh)
+            statusText = "Success"
+
+        except Exception as sliceError:
+            reducedChiSq, epeakVal, epeakLow, epeakHigh = 0.0, 0.0, 0.0, 0.0
+            statusText = f"Failed: {str(sliceError)}"
+
+        localRows.append({
+            "sliceId": currentRow, 
+            "status": statusText, 
+            "reducedChiSq": round(reducedChiSq, 2),
+            "epeak": round(epeakVal, 2), 
+            "epeakLow": round(epeakLow, 2), 
+            "epeakHigh": round(epeakHigh, 2)
+        })
+
+    if localRows:
+        with open(outputCsv, "w", newline="") as csvFileObject:
+            dictWriter = csv.DictWriter(csvFileObject, fieldnames=localRows[0].keys())
             dictWriter.writeheader()
-        dictWriter.writerows([rowResult])
-        
-    print("WORKER COMPLETE: Row appended.", flush=True)
+            dictWriter.writerows(localRows)
+            
+    print(f"BATCH_COMPLETE:{len(localRows)}", flush=True)

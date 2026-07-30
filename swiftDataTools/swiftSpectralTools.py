@@ -118,10 +118,12 @@ class SpectralProcessor:
             self
         )-> None:
         print("Generating spectrum for burst period")
+        # generate the output filepath for the spectrum
+        self.spectrumPath = self.__outputDir / "outputSpectrum.pha"
         # run batbinevt to create the spectrum for the burst period
         output = batbinevt(
             infile = str(self.__eventFilename),
-            outfile = str(self.__outputDir / "outputSpectrum.pha"),
+            outfile = str(self.spectrumPath),
             outtype = "PHA",
             timedel = 0.0,
             timebinalg = self.__timeBinMethod,
@@ -143,7 +145,7 @@ class SpectralProcessor:
         commandString = (
             f"source {self.__headasPath}/headas-init.sh && "
             f"export LHEAPERL=$(which perl) && " # 29/07 now it is complaining about the perl path??? TODO
-            f"batupdatephakw {self.__outputDir / 'outputSpectrum.pha'} {self.__eventDir / f'sw{self.__triggerID}bevtr.fits.gz'} clobber=YES"
+            f"batupdatephakw {self.spectrumPath} {self.__eventDir / f'sw{self.__triggerID}bevtr.fits.gz'} clobber=YES"
         )
         self.__subprocessRunCommand(commandString)  
 
@@ -151,7 +153,7 @@ class SpectralProcessor:
         commandString = (
             f"source {self.__headasPath}/headas-init.sh && "
             f"export LHEAPERL=$(which perl) && "
-            f"batphasyserr {self.__outputDir / 'outputSpectrum.pha'} CALDB clobber=YES"
+            f"batphasyserr {self.spectrumPath} CALDB clobber=YES"
         )
         self.__subprocessRunCommand(commandString)  
 
@@ -160,10 +162,12 @@ class SpectralProcessor:
             self
         )-> None:
         print("Generating response matrix for burst period")
+        # generate the output filepath for the response matrix
+        self.responseMatrixPath = self.__outputDir / "outputResponse.rsp"
         # run batdrmgen to create the response matrix for the burst period
         output = batdrmgen(
-            infile = str(self.__outputDir / "outputSpectrum.pha"),
-            outfile = str(self.__outputDir / "outputResponse.rsp"),
+            infile = str(self.spectrumPath),
+            outfile = str(self.responseMatrixPath),
             hkfile = 'NONE',
             clobber = "YES"
         )
@@ -186,7 +190,7 @@ if __name__ == "__main__":
         data
         )
 
-    processor = spectralProcessor(
+    processor = SpectralProcessor(
         batPath="data/reproc/00306757000/bat",
         startTime=startTime,
         stopTime=stopTime,

@@ -1,5 +1,5 @@
 from os import system, environ, makedirs
-from heasoftpy import Config, bateconvert, batmaskwtevt
+from heasoftpy import Config, bateconvert, batmaskwtevt, batbinevt
 from swiftDataTools.swiftBATCatalogueGRB import getObservationID, importData, getCoordinates, getStartStopTime
 from swiftDataTools.swiftSpectralTools import SpectralProcessor
 from pathlib import Path
@@ -71,6 +71,54 @@ class ProcessSwiftData:
         self.__burstLightCurvePath: Path = self.__eventDir / "outputBurst.lc"
         self.__postBurstLightCurvePath: Path = self.__eventDir / "outputPostBurst.lc"
 
+        # process the event file into a light curve
+        self.__processToLightCurve()
+
+        # load the light curve data from the output files using astropy.io.fits
+        self.__preBurstLightCurve: fits.HDUList = fits.open(self.__preBurstLightCurvePath)
+        self.__burstLightCurve: fits.HDUList = fits.open(self.__burstLightCurvePath)
+        self.__postBurstLightCurve: fits.HDUList = fits.open(self.__postBurstLightCurvePath)
+
+        # generate the spectrum and response matrix for the burst period
+        self.__spectralProcessor: SpectralProcessor = SpectralProcessor(
+            batPath=str(self.__triggerDir),
+            startTime=self.__startTime,
+            stopTime=self.__stopTime,
+            triggerID=self.__triggerID,
+            outputDir=str(self.__eventDir)
+        )
+
+
+
+        # might as well calculate the Epeak while the spectrum is being generated.
+        # analyze the spectrum using XSPEC to find the Epeak WRONG! this is not trivial and needs its
+        # own class to handle the XSPEC analysis.
+
+        # read in the response matrix and find the detector effective area. 
+        self.__effectiveArea: float = self.__detectorEffectiveArea()
+
+        # convert the bins in the light curve to photon counts using the effective area photons = counts / effective area
+        
+
+        # potentially recalculate the light curve and uncertaities using monte carlo simulations?
+        # this step is done by Bala et al 2026 on Fermi data.
+        # to do this assume that the light curve is the poisson mean and get the background rate from
+        # the pre-burst and post-burst light curves. See if parametricMCUncertainty.py can be used
+        # for this.
+
+
+
+
+
+
+
+
+
+
+
+    def __processToLightCurve(
+            self
+        )-> None:
         # create the output directory if it does not exist
         print(f"Processing data for {GRBName}...")
         self.__eventFilename: str = str(self.__eventDir / f"sw{self.__triggerID}bevshsp_uf.evt.gz")
@@ -108,44 +156,9 @@ class ProcessSwiftData:
             self.__stopTime + self.__burstDuration
             )
 
-
         # extract the light curves
         for period in range(3):
             self.__extractLightCurve(period)
-
-        # TODO
-        # load the light curve data from the output files using astropy.io.fits
-        self.__preBurstLightCurve: fits.HDUList = fits.open(self.__preBurstLightCurvePath)
-        self.__burstLightCurve: fits.HDUList = fits.open(self.__burstLightCurvePath)
-        self.__postBurstLightCurve: fits.HDUList = fits.open(self.__postBurstLightCurvePath)
-
-        # generate the spectrum and response matrix for the burst period
-        self.__spectralProcessor: SpectralProcessor = SpectralProcessor(
-            batPath=str(self.__triggerDir),
-            startTime=self.__startTime,
-            stopTime=self.__stopTime,
-            triggerID=self.__triggerID,
-            outputDir=str(self.__eventDir)
-        )
-
-        # might as well calculate the Epeak while the spectrum is being generated.
-        # analyze the spectrum using XSPEC to find the Epeak WRONG! this is not trivial and needs its
-        # own class to handle the XSPEC analysis.
-
-        # calculate the effective area of the detector (sum the elements of the response matrix)
-
-        # convert the bins in the light curve to photon counts using the effective area photons = counts / effective area
-
-        # potentially recalculate the light curve and uncertaities using monte carlo simulations?
-        # this step is done by Bala et al 2026 on Fermi data.
-        # to do this assume that the light curve is the poisson mean and get the background rate from
-        # the pre-burst and post-burst light curves. See if parametricMCUncertainty.py can be used
-        # for this.
-
-
-
-
-
 
 
     def __unzipFile(
@@ -427,6 +440,31 @@ class ProcessSwiftData:
             outunits = "COUNTS"
         )
         print(output.stdout)
+
+
+    def __detectorEffectiveArea(
+            self
+        )-> np.ndarray:
+        """
+        Reads in the response matrix and finds the effective area of the detector. The effective area is calculated by summing the elements of the response matrix.
+
+        Returns:
+            np.ndarray: The effective area of the detector.
+        """
+        # read in the response matrix using astropy.io.fits
+        responseMatrixFITS: fits.HDUList = fits.open(self.__spectralProcessor.responseMatrixPath)[1]
+        responseMatrix: np.ndarray = responseMatrixFITS.data['MATRIX']
+
+        # get the number of active detectors
+        numActiveDetectors: int = self.__burstLightCurve[1].header.get('NGOODPIX')
+
+        effectiveArea: np.ndarray = responseMatrix.sum()
+        return effectiveArea
+
+
+
+
+
 
 
 if __name__ == "__main__":

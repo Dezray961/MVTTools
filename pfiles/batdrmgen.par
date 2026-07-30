@@ -1,5 +1,5 @@
-infile,fr,a,"outputSpectrum.pha",,,"Input event PHA file name "
-outfile,f,a,"outputResponse.rsp",,,"Output response matrix file name "
+infile,fr,a,"/home/derekpinkett/coding/MVTTools/data/reproc/00306757000/bat/event/outputSpectrum.pha",,,"Input event PHA file name "
+outfile,f,a,"/home/derekpinkett/coding/MVTTools/data/reproc/00306757000/bat/event/outputResponse.rsp",,,"Output response matrix file name "
 hkfile,s,a,"NONE",,,"DAP housekeeping file name"
 calfile,s,h,"CALDB",,,"Calibration data file (or CALDB) "
 depthfile,s,h,"CALDB",,,"Depth distribution data file (or CALDB)"

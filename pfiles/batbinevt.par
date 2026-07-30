@@ -1,5 +1,5 @@
-infile,s,a,"sw00306757000bevshsp_uf.evt.gz",,,"Input event file name(s), or @file.list "
-outfile,f,a,"outputSpectrum.pha",,,"Output spectrum or light curve file name "
+infile,s,a,"/home/derekpinkett/coding/MVTTools/data/reproc/00306757000/bat/event/sw00306757000bevshsp_uf.evt.gz",,,"Input event file name(s), or @file.list "
+outfile,f,a,"/home/derekpinkett/coding/MVTTools/data/reproc/00306757000/bat/event/outputSpectrum.pha",,,"Output spectrum or light curve file name "
 outtype,s,a,"PHA",,,"Make light curve or spectrum (LC, PHA, DPH, DPI or DPITAB) "
 timedel,r,a,0.0,0,,"Histogram time bin size [sec] "
 timebinalg,s,a,"u",,,"Time binning algorithm (uniform,snr,highsnr,gti,infile,matchlc) "

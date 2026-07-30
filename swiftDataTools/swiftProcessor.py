@@ -1,12 +1,10 @@
-from os import system, environ, getcwd, makedirs
-from os.path import exists, join, abspath
-from heasoftpy import Config, bateconvert, batmaskwtevt, batbinevt, batupdatephakw, batphasyserr, batdrmgen, HSPTask
-from contextlib import chdir
+from os import system, environ, makedirs
+from heasoftpy import Config, bateconvert, batmaskwtevt
 from swiftDataTools.swiftBATCatalogueGRB import getObservationID, importData, getCoordinates, getStartStopTime
+from swiftDataTools.swiftSpectralTools import SpectralProcessor
 from pathlib import Path
 from astropy.io import fits
 import numpy as np
-import subprocess
 
 class ProcessSwiftData:
     """Class to process Swift BAT data for a given GRB. This class handles the processing of Swift BAT data for a given GRB, including checking and applying gain correction, checking and applying mask weighting, extracting light curves for different time periods, and converting the light curve data into CSV files. It has the ability to process a custom time range, however this will require the user to call methods from outside the class."""
@@ -30,16 +28,17 @@ class ProcessSwiftData:
             None: Output is saved to a CSV file in the `data/processed/{GRBName}` directory.
         """
         # Check if the HEADAS environment variable is set. If it is not set, print an error message and exit the program. This is important because the HEASoft tools require the HEADAS environment variable to be set in order to function properly. If the variable is not set, the program will not be able to find the necessary tools and will fail to run. By checking for the variable at the beginning of the program, we can ensure that the user is aware of the issue and can take steps to fix it before proceeding with the data processing.
+        self.__repoRoot: Path = Path(__file__).resolve().parents[1]
         self.__headasPath = environ.get("HEADAS")
         if self.__headasPath:
             # setup local separate writeable parameter directory
-            local_pfiles = abspath("./pfiles")
-            makedirs(local_pfiles, exist_ok=True)
-            environ["PFILES"] = f"{local_pfiles};{self.__headasPath}/syspfiles"
+            self.__localPfiles: Path = self.__repoRoot / "pfiles"
+            makedirs(self.__localPfiles, exist_ok=True)
+            environ["PFILES"] = f"{self.__localPfiles};{Path(self.__headasPath) / 'syspfiles'}"
             
             # inject HEASoft binaries directly into Python's active execution path
-            environ["PATH"] = f"{join(self.__headasPath, 'bin')}:{environ.get('PATH', '')}"
-            environ["LD_LIBRARY_PATH"] = f"{join(self.__headasPath, 'lib')}:{environ.get('LD_LIBRARY_PATH', '')}"
+            environ["PATH"] = f"{Path(self.__headasPath) / 'bin'}:{environ.get('PATH', '')}"
+            environ["LD_LIBRARY_PATH"] = f"{Path(self.__headasPath) / 'lib'}:{environ.get('LD_LIBRARY_PATH', '')}"
         else:
             raise EnvironmentError("Error: HEADAS environment variable not found. Did you initialize HEASoft?")
         Config.allow_failure = False
@@ -47,8 +46,8 @@ class ProcessSwiftData:
         # set the CALDB environment variables
         self.__caldbPath = environ.get("CALDB")
         if self.__caldbPath:
-            environ["CALDBCONFIG"] = join(self.__caldbPath, 'software', 'tools', 'caldb.config')
-            environ["CALDBALIAS"] = join(self.__caldbPath, 'software', 'tools', 'alias_config.fits')
+            environ["CALDBCONFIG"] = str(Path(self.__caldbPath) / 'software' / 'tools' / 'caldb.config')
+            environ["CALDBALIAS"] = str(Path(self.__caldbPath) / 'software' / 'tools' / 'alias_config.fits')
 
         self.GRBName = GRBName
         self.energyBins = config.preProcessingConfig.swiftBATConfig.download.energyRange
@@ -62,76 +61,86 @@ class ProcessSwiftData:
         # find the right ascension and declination of the GRB from the summary_general.csv file.
         self.__rightAscension, self.__declination = getCoordinates(self.GRBName, self.__data)
 
+        self.__triggerDir: Path = self.__repoRoot / "data" / "reproc" / self.__triggerID / "bat"
+        self.__eventDir: Path = self.__triggerDir / "event"
+        self.__hkDir: Path = self.__triggerDir / "hk"
+        self.__auxDir: Path = self.__triggerDir / "aux"
+        self.__processedDir: Path = self.__repoRoot / "data" / "processed" / self.GRBName
+        self.__processedDir.mkdir(parents=True, exist_ok=True)
+        self.__preBurstLightCurvePath: Path = self.__eventDir / "outputPreBurst.lc"
+        self.__burstLightCurvePath: Path = self.__eventDir / "outputBurst.lc"
+        self.__postBurstLightCurvePath: Path = self.__eventDir / "outputPostBurst.lc"
+
         # create the output directory if it does not exist
-        Path(f"data/processed/{self.GRBName}").mkdir(parents=True, exist_ok=True)
+        print(f"Processing data for {GRBName}...")
+        self.__eventFilename: str = str(self.__eventDir / f"sw{self.__triggerID}bevshsp_uf.evt.gz")
+        
+        # read the event FITS file using astropy.io.fits. 
+        self.__eventFITS: fits.HDUList = fits.open(self.__eventFilename)
 
-        # process the data using the HEASoft tools
-        with chdir(f"data/reproc/{self.__triggerID}/bat/event"):
-            print(f"Processing data for {GRBName}...")
-            self.__eventFilename: str = f"sw{self.__triggerID}bevshsp_uf.evt.gz"
-            
-            # read the event FITS file using astropy.io.fits. 
-            self.__eventFITS: fits.HDUList = fits.open(self.__eventFilename)
+        # check if the gain correction has been applied to the event file.
+        if not self.__checkGain():
+            # correct the gain if it has not been applied.
+            self.__correctGain()
+        
+        # check if the mask has been applied to the event file. 
+        if not self.__checkMask():
+            # apply the mask if it has not been applied.
+            self.__applyMask()
 
-            # check if the gain correction has been applied to the event file.
-            if not self.__checkGain():
-                # correct the gain if it has not been applied.
-                self.__correctGain()
-            
-            # check if the mask has been applied to the event file. 
-            if not self.__checkMask():
-                # apply the mask if it has not been applied.
-                self.__applyMask()
+        # get the start and stop times of the burst from the summary_general.csv file.
+        self.__startTime, self.__stopTime, _ = getStartStopTime(
+            self.GRBName,
+            self.__data
+        )
 
-            # get the start and stop times of the burst from the summary_general.csv file.
-            self.__startTime, self.__stopTime, _ = getStartStopTime(
-                self.GRBName,
-                self.__data
+        # find the burst duration
+        self.__burstDuration: float = self.__stopTime - self.__startTime
+        print(f"Start time: {self.__startTime} seconds")
+        print(f"Stop time: {self.__stopTime} seconds")
+        print(f"Burst duration: {self.__burstDuration} seconds")
+
+        # get the pre and post bust midpoints 
+        self.__preBurstMidpoint: float = (
+            self.__startTime - self.__burstDuration
+            )
+        self.__postBurstMidpoint: float = (
+            self.__stopTime + self.__burstDuration
             )
 
-            # find the burst duration
-            self.__burstDuration: float = self.__stopTime - self.__startTime
-            print(f"Start time: {self.__startTime} seconds")
-            print(f"Stop time: {self.__stopTime} seconds")
-            print(f"Burst duration: {self.__burstDuration} seconds")
 
-            # get the pre and post bust midpoints 
-            self.__preBurstMidpoint: float = (
-                self.__startTime - self.__burstDuration
-                )
-            self.__postBurstMidpoint: float = (
-                self.__stopTime + self.__burstDuration
-                )
+        # extract the light curves
+        for period in range(3):
+            self.__extractLightCurve(period)
 
+        # TODO
+        # load the light curve data from the output files using astropy.io.fits
+        self.__preBurstLightCurve: fits.HDUList = fits.open(self.__preBurstLightCurvePath)
+        self.__burstLightCurve: fits.HDUList = fits.open(self.__burstLightCurvePath)
+        self.__postBurstLightCurve: fits.HDUList = fits.open(self.__postBurstLightCurvePath)
 
-            # extract the light curves
-            for period in range(3):
-                self.__extractLightCurve(period)
+        # generate the spectrum and response matrix for the burst period
+        self.__spectralProcessor: SpectralProcessor = SpectralProcessor(
+            batPath=str(self.__triggerDir),
+            startTime=self.__startTime,
+            stopTime=self.__stopTime,
+            triggerID=self.__triggerID,
+            outputDir=str(self.__eventDir)
+        )
 
-            # TODO
-            # load the light curve data from the output files using astropy.io.fits
-            self.__preBurstLightCurve: fits.HDUList = fits.open("outputPreBurst.lc")
-            self.__burstLightCurve: fits.HDUList = fits.open("outputBurst.lc")
-            self.__postBurstLightCurve: fits.HDUList = fits.open("outputPostBurst.lc")
+        # might as well calculate the Epeak while the spectrum is being generated.
+        # analyze the spectrum using XSPEC to find the Epeak WRONG! this is not trivial and needs its
+        # own class to handle the XSPEC analysis.
 
-            # generate the spectrum for the burst period
-            self.__generateSpectrum()
+        # calculate the effective area of the detector (sum the elements of the response matrix)
 
-            # generate the response matrix using batdrmgen
-            self.__generateResponseMatrix()
+        # convert the bins in the light curve to photon counts using the effective area photons = counts / effective area
 
-            # might as well calculate the Epeak while the spectrum is being generated.
-            # analyze the spectrum using XSPEC to find the Epeak
-
-            # calculate the effective area of the detector (sum the elements of the response matrix)
-
-            # convert the bins in the light curve to photon counts using the effective area photons = counts / effective area
-
-            # potentially recalculate the light curve and uncertaities using monte carlo simulations?
-            # this step is done by Bala et al 2026 on Fermi data.
-            # to do this assume that the light curve is the poisson mean and get the background rate from
-            # the pre-burst and post-burst light curves. See if parametricMCUncertainty.py can be used
-            # for this.
+        # potentially recalculate the light curve and uncertaities using monte carlo simulations?
+        # this step is done by Bala et al 2026 on Fermi data.
+        # to do this assume that the light curve is the poisson mean and get the background rate from
+        # the pre-burst and post-burst light curves. See if parametricMCUncertainty.py can be used
+        # for this.
 
 
 
@@ -206,8 +215,8 @@ class ProcessSwiftData:
         print("Gain correction has not been applied.")
         print("Applying gain correction to file: ", self.__eventFilename)
         # find the calibration file in the hk directory. 
-        self.__calibrationFile: str = f"../hk/{self.__eventFilename.replace('bevshsp_uf.evt.gz', 'bcbo01deg00ab.fits.gz')}"
-        if not exists(self.__calibrationFile):
+        self.__calibrationFile: Path = self.__hkDir / Path(self.__eventFilename).name.replace('bevshsp_uf.evt.gz', 'bcbo01deg00ab.fits.gz')
+        if not self.__calibrationFile.exists():
             ### download the calibration file - impliment this later
             raise FileNotFoundError(f"Calibration file not found: {self.__calibrationFile}")
 
@@ -220,7 +229,7 @@ class ProcessSwiftData:
         # run the bateconvert command to correct the gain. 
         output = bateconvert(
             infile = self.__eventFilename,
-            calfile = self.__calibrationFile,
+            calfile = str(self.__calibrationFile),
             residfile = "CALDB",
             pulserfile = "CALDB",
             fitpulserfile = "CALDB",
@@ -319,14 +328,14 @@ class ProcessSwiftData:
         print("Applying mask to file: ", self.__eventFilename)
 
         # find the attitude file in the aux directory.
-        self.__attitudeFile: str = f"../aux/{self.__eventFilename.replace('bevshsp_uf.evt.gz', 'sat.fits.gz')}"
-        if not exists(self.__attitudeFile):
+        self.__attitudeFile: Path = self.__auxDir / Path(self.__eventFilename).name.replace('bevshsp_uf.evt.gz', 'sat.fits.gz')
+        if not self.__attitudeFile.exists():
             ### download the attitude file - impliment this later
             raise FileNotFoundError(f"Attitude file not found: {self.__attitudeFile}")
             
         # find the quality map file in the hk directory.
-        self.__qualityMapFile: str = f"../hk/{self.__eventFilename.replace('bevshsp_uf.evt.gz', 'bdqcb.hk.gz')}"
-        if not exists(self.__qualityMapFile):
+        self.__qualityMapFile: Path = self.__hkDir / Path(self.__eventFilename).name.replace('bevshsp_uf.evt.gz', 'bdqcb.hk.gz')
+        if not self.__qualityMapFile.exists():
             ### download the quality map file - impliment this later
             raise FileNotFoundError(f"Quality map file not found: {self.__qualityMapFile}")
 
@@ -338,13 +347,13 @@ class ProcessSwiftData:
         # run the batmaskwtevt command to apply the mask.
         output = batmaskwtevt(
             infile = self.__eventFilename,
-            attitude = self.__attitudeFile,
+            attitude = str(self.__attitudeFile),
             ra = self.__rightAscension,
             dec = self.__declination,
-            detmask = self.__qualityMapFile,
+            detmask = str(self.__qualityMapFile),
             rebalance = "YES",
             corrections = "default",
-            auxfile = f"/local/data/gcn5b/craigm/{self.__triggerID}bevtr.fits",
+            auxfile = str(self.__eventDir / f"{self.__triggerID}bevtr.fits"),
             clobber = "YES"
         )
         print(output.stdout)
@@ -371,12 +380,12 @@ class ProcessSwiftData:
         # determine the start and stop times for the light curve extraction
         match period:
             case 0: # pre-burst
-                fileName: str = "outputPreBurst.lc"
+                fileName: Path = self.__preBurstLightCurvePath
                 startTime: float = self.__preBurstMidpoint - 1.0
                 stopTime: float = self.__preBurstMidpoint + 1.0
                 print("Extracting pre-burst uniform light curve")
             case 1: # burst
-                fileName: str = "outputBurst.lc"
+                fileName: Path = self.__burstLightCurvePath
                 if config.preProcessingConfig.swiftBATConfig.processing.fullBurst:
                     startTime: float = self.__startTime - 2.0
                     stopTime: float = self.__stopTime + 2.0
@@ -389,14 +398,14 @@ class ProcessSwiftData:
                         )
                     print("Extracting burst uniform light curve")
             case 2: # post-burst
-                fileName: str = "outputPostBurst.lc"
+                fileName: Path = self.__postBurstLightCurvePath
                 startTime: float = self.__postBurstMidpoint - 1.0
                 stopTime: float = self.__postBurstMidpoint + 1.0
                 print("Extracting post-burst uniform light curve")
             case 3: # custom
                 if customTimeRange is None:
                     raise ValueError("Custom time range must be provided for period 3")
-                fileName: str = "outputCustom.lc"
+                fileName: Path = self.__eventDir / "outputCustom.lc"
                 startTime: float = customTimeRange[0]
                 stopTime: float = customTimeRange[1]
                 print("Extracting custom uniform light curve")
@@ -406,91 +415,16 @@ class ProcessSwiftData:
         # run batbinevt to create the light curve (uniform bins)
         output = batbinevt(
             infile = self.__eventFilename,
-            outfile = fileName,
+            outfile = str(fileName),
             outtype = "LC",
             timedel = config.preProcessingConfig.swiftBATConfig.processing.initialBinSize,
             timebinalg = "u",
             energybins = self.energyBins,
-            detmask = f"../hk/sw{self.__triggerID}bdqcb.hk.gz",
+            detmask = str(self.__hkDir / f"sw{self.__triggerID}bdqcb.hk.gz"),
             tstart = startTime,
             tstop = stopTime,
             clobber = "YES",
             outunits = "COUNTS"
-        )
-        print(output.stdout)
-
-
-    def __subprocessRunCommand(
-            self,
-            commandString: str
-        )-> None:
-        """Runs a command string in a bash shell using subprocess.run. This is a wrapper function for subprocess.run, which is used to run commands in a bash shell. The function takes in a command string, and uses subprocess.run to run the command in a bash shell. The function does not return anything, but it will print out any output from the command to the console.
-
-        Args:
-            commandString (str): The command string to be run. This should be a valid bash command string.
-        """
-        output = subprocess.run(
-            commandString,
-            shell=True,
-            executable="/bin/bash",
-            capture_output=True,
-            text=True
-        )
-        print(f"STDOUT Log:\n{output.stdout}")
-        if output.returncode != 0:
-            print(f"Command failed with code {output.returncode}!")
-            print(f"Error Log:\n{output.stderr}")
-
-
-    def __generateSpectrum(
-            self
-        )-> None:
-        print("Generating spectrum for burst period")
-        # run batbinevt to create the spectrum for the burst period
-        output = batbinevt(
-            infile = self.__eventFilename,
-            outfile = "outputSpectrum.pha",
-            outtype = "PHA",
-            timedel = 0.0,
-            timebinalg = "u",
-            tstart = self.__startTime,
-            tstop = self.__stopTime,
-            energybins = 'CALDB:80',
-            outunits = "RATE",
-            detmask = f"../hk/sw{self.__triggerID}bdqcb.hk.gz",
-            clobber = "YES"
-        )
-        print(output.stdout)
-
-        print("Applying corrections to the spectrum")
-        # run batupdatephakw and batphasyserr to apply corrections to the spectrum
-        # currently this is done using subprocess.run to run the commands in a bash shell. 
-        # This is because the heasoftpy wrapper for batupdatephakw is throwing errors about the 
-        # CALDB environment variable not being set, even though it is set??? TODO
-        commandString = (
-            f"source {self.__headasPath}/headas-init.sh && "
-            f"batupdatephakw outputSpectrum.pha sw{self.__triggerID}bevtr.fits.gz clobber=YES"
-        )
-        self.__subprocessRunCommand(commandString)  
-
-        # Construct the bash command string, injecting your HEASoft and CALDB setup
-        commandString = (
-            f"source {self.__headasPath}/headas-init.sh && "
-            f"batphasyserr outputSpectrum.pha CALDB clobber=YES"
-        )
-        self.__subprocessRunCommand(commandString)  
-
-
-    def __generateResponseMatrix(
-            self
-        )-> None:
-        print("Generating response matrix for burst period")
-        # run batdrmgen to create the response matrix for the burst period
-        output = batdrmgen(
-            infile = "outputSpectrum.pha",
-            outfile = "outputResponse.rsp",
-            hkfile = 'NONE',
-            clobber = "YES"
         )
         print(output.stdout)
 

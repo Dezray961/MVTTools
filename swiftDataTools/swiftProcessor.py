@@ -98,13 +98,24 @@ class ProcessSwiftData:
         self.__effectiveArea: float = self.__detectorEffectiveArea()
 
         # convert the bins in the light curve to photon counts using the effective area photons = counts / effective area
-        self.__photonCounts: np.ndarray = self.__convertCountsToPhotons()
+        self.__photonCounts, self.__photonErrors = self.__convertCountsToPhotons()
 
         # potentially recalculate the light curve and uncertaities using monte carlo simulations?
         # this step is done by Bala et al 2026 on Fermi data.
         # to do this assume that the light curve is the poisson mean and get the background rate from
         # the pre-burst and post-burst light curves. See if parametricMCUncertainty.py can be used
-        # for this.
+        # for this. They actually only do it for the purpose of detector combination selection and
+        # rebinning. I am not sure that this is necessary for Swift data. I guess that I could see if 
+        # calculating the MVT and rebinning accordingly would change the MVT? My concern is that if it 
+        # overshoots then it would have no way of converging on the correct MVT as it will only ever be
+        # the new bin width.
+
+        # Lookng closer, once they have a convergent MVT/SNR they then use that detector combination and
+        # rebin the light curve into 100us bins. THEN they do monte carlo simulations to get the
+        # uncertainties on the MVT. So it isn't applicable here.
+
+        # I think that this is now ready to be handed into the MVT calculation section of the pipe. 
+        # TODO re-evaluate this on Monday! 
 
 
     def __processToLightCurve(
@@ -478,8 +489,9 @@ class ProcessSwiftData:
         """
         Converts the counts in the light curve to photons using the effective area. The conversion is done by dividing the counts by the effective area.
         """
-        # get the counts from the light curve
+        # get the counts and errors from the light curve
         counts: np.ndarray = self.__burstLightCurve[1].data['COUNTS']
+        errors: np.ndarray = self.__burstLightCurve[1].data['ERROR']
 
         # get the number of detectors from the light curve header
         numberOfDetectors: int = self.__burstLightCurve[1].header['NGOODPIX']
@@ -487,7 +499,10 @@ class ProcessSwiftData:
         # convert the counts to photons using the effective area
         photons: np.ndarray = counts * numberOfDetectors / self.__effectiveArea
 
-        return photons
+        # propagate the errors using the effective area
+        photonErrors: np.ndarray = errors * numberOfDetectors / self.__effectiveArea
+
+        return photons, photonErrors
 
 
 

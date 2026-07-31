@@ -43,7 +43,7 @@ preProcessingConfig:
   swiftBATConfig:
     # Download settings
     download:
-      energyRange: "15-350" # energy range
+      energyRange: "15-150" # energy range
     
     # Processing settings
     processing:

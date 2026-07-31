@@ -98,22 +98,13 @@ class ProcessSwiftData:
         self.__effectiveArea: float = self.__detectorEffectiveArea()
 
         # convert the bins in the light curve to photon counts using the effective area photons = counts / effective area
-        
+        self.__photonCounts: np.ndarray = self.__convertCountsToPhotons()
 
         # potentially recalculate the light curve and uncertaities using monte carlo simulations?
         # this step is done by Bala et al 2026 on Fermi data.
         # to do this assume that the light curve is the poisson mean and get the background rate from
         # the pre-burst and post-burst light curves. See if parametricMCUncertainty.py can be used
         # for this.
-
-
-
-
-
-
-
-
-
 
 
     def __processToLightCurve(
@@ -444,22 +435,69 @@ class ProcessSwiftData:
 
     def __detectorEffectiveArea(
             self
-        )-> np.ndarray:
+        )-> float:
         """
         Reads in the response matrix and finds the effective area of the detector. The effective area is calculated by summing the elements of the response matrix.
 
         Returns:
-            np.ndarray: The effective area of the detector.
+            float: The effective area of the detector.
         """
         # read in the response matrix using astropy.io.fits
         responseMatrixFITS: fits.HDUList = fits.open(self.__spectralProcessor.responseMatrixPath)[1]
+
+        # get the response matrix from the FITS file. 
         responseMatrix: np.ndarray = responseMatrixFITS.data['MATRIX']
 
-        # get the number of active detectors
-        numActiveDetectors: int = self.__burstLightCurve[1].header.get('NGOODPIX')
+        # get the energy bins from the response matrix FITS file.
+        energyLow: np.ndarray = responseMatrixFITS.data['ENERG_LO']
+        energyHigh: np.ndarray = responseMatrixFITS.data['ENERG_HI']
 
-        effectiveArea: np.ndarray = responseMatrix.sum()
+        # find the bin centers for the energy bins
+        energyBinCenters: np.ndarray = (energyLow + energyHigh) / 2.0
+
+        # create a boolean mask to select energy bins within the specified range
+        energyRange: tuple[float, float] = tuple(map(float, self.energyBins.split('-')))
+        energyMask: np.ndarray = (
+            energyBinCenters >= energyRange[0]) & (energyBinCenters <= energyRange[1]
+            )
+
+        # sum the response matrix rows that correspond to the selected energy bins
+        responseMatrix: np.ndarray = responseMatrix[energyMask, :]
+        rowSums: np.ndarray = responseMatrix.sum(axis=1)
+
+        # calculate the effective area by averaging the row sums of the response matrix. 
+        effectiveArea: float = rowSums.mean()
+        print(f"Effective area of the detector: {effectiveArea} cm^2")
+
         return effectiveArea
+
+
+    def __convertCountsToPhotons(
+            self
+        )-> np.ndarray:
+        """
+        Converts the counts in the light curve to photons using the effective area. The conversion is done by dividing the counts by the effective area.
+        """
+        # get the counts from the light curve
+        counts: np.ndarray = self.__burstLightCurve[1].data['COUNTS']
+
+        # get the number of detectors from the light curve header
+        numberOfDetectors: int = self.__burstLightCurve[1].header['NGOODPIX']
+
+        # convert the counts to photons using the effective area
+        photons: np.ndarray = counts * numberOfDetectors / self.__effectiveArea
+
+        return photons
+
+
+
+
+
+
+
+
+
+
 
 
 

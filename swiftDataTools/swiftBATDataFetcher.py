@@ -1,16 +1,11 @@
 """
-To be implimented later, dumping some things I have found.
-Data needs to be downloaded from the www.swift.ac.uk archive.
-They have the ability to generate a wget statement to download the 
-data from a shell.
-The statements are generated for each trigger ID that is included in the
-address bar of the webpage. E.g.
-https://www.swift.ac.uk/archive/download.sh?reproc=1&tid=00145675&source=obs&subdir=bat
-I can work supply an address for the data I want to download, and use
-their wget statement to download the data. 
+Generates wget statements to download Swift BAT data from the swift.ac.uk archive.
+The statements are generated for each trigger ID that is included in the address bar of the webpage.
+E.g. https://www.swift.ac.uk/archive/download.sh?reproc=1&tid=00145675&source=obs&subdir=bat
 
-The data is downloaded in a directory structure and the wget will need
-to be run in the data folder to be compatible with initialProcessing.py
+
+The data is downloaded with a pre-existing directory structure. The wget is run in the data folder to
+be compatible with swiftBATPipe.py
 
 Only the initial 000 file has the event data
 

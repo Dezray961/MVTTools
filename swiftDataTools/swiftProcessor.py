@@ -13,6 +13,7 @@ from swiftDataTools.swiftSpectralTools import SpectralProcessor
 from pathlib import Path
 from astropy.io import fits
 import numpy as np
+from loadConfig import config
 
 class ProcessSwiftData:
     """Class to process Swift BAT data for a given GRB. This class handles the processing of Swift BAT data for a given GRB, including checking and applying gain correction, checking and applying mask weighting, extracting light curves for different time periods, and converting the light curve data into CSV files. It has the ability to process a custom time range, however this will require the user to change settings in the config.yaml file. """
@@ -80,7 +81,7 @@ class ProcessSwiftData:
             self
         )-> None:
         """Sets the environment variables for HEASoft and CALDB."""
-        # Check if the HEADAS environment variable is set. If it is not set, print an error message and exit the program. This is important because the HEASoft tools require the HEADAS environment variable to be set in order to function properly. If the variable is not set, the program will not be able to find the necessary tools and will fail to run. By checking for the variable at the beginning of the program, we can ensure that the user is aware of the issue and can take steps to fix it before proceeding with the data processing.
+        # Check if the HEADAS environment variable is set. If it is not set, raise an error message and exit the program. This is important because the HEASoft tools require the HEADAS environment variable to be set in order to function properly. If the variable is not set, the program will not be able to find the necessary tools and will fail to run. By checking for the variable at the beginning of the program, we can ensure that the user is aware of the issue and can take steps to fix it before proceeding with the data processing.
         self.__repoRoot: Path = Path(__file__).resolve().parents[1]
         self.__headasPath = environ.get("HEADAS")
         if self.__headasPath:
@@ -353,7 +354,7 @@ class ProcessSwiftData:
 
         ##################################################
         # create the output directory if it does not exist
-        print(f"Processing data for {GRBName}...")
+        print(f"Processing data for {self.GRBName}...")
         self.__eventFilename: str = str(self.__eventDir / f"sw{self.__triggerID}bevshsp_uf.evt.gz")
         
         # read the event FITS file using astropy.io.fits. 
@@ -555,7 +556,5 @@ class ProcessSwiftData:
 
 
 if __name__ == "__main__":
-    from loadConfig import importConfiguration
-    config = importConfiguration("config.yaml")
     GRBName: str = "GRB080319B"
     data: ProcessSwiftData = ProcessSwiftData(GRBName)

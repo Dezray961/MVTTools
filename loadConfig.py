@@ -58,7 +58,4 @@ def getInitialBinSize(
             raise ValueError(f"Unknown source: {source}. Valid options are 'swift', 'fermi', 'svom'.")
 
 
-if __name__ == "__main__":
-    config = importConfiguration()
-    print("Configuration loaded successfully.")
-    print(config.generalSettings.directories.dataPath)
+config = importConfiguration()

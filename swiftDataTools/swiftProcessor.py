@@ -1,4 +1,12 @@
-from os import system, environ, makedirs
+"""
+Processes Swift BAT data for a given GRB. Currently has some work arounds to handle CALDB and PERL
+issues. I am unsure if these issues are due to my laptop or if they are a general issue. 
+TODO investigate this.
+"""
+
+
+from os import environ, makedirs
+from subprocess import run
 from heasoftpy import Config, bateconvert, batmaskwtevt, batbinevt
 from swiftDataTools.swiftBATCatalogueGRB import getObservationID, importData, getCoordinates, getStartStopTime
 from swiftDataTools.swiftSpectralTools import SpectralProcessor
@@ -7,7 +15,7 @@ from astropy.io import fits
 import numpy as np
 
 class ProcessSwiftData:
-    """Class to process Swift BAT data for a given GRB. This class handles the processing of Swift BAT data for a given GRB, including checking and applying gain correction, checking and applying mask weighting, extracting light curves for different time periods, and converting the light curve data into CSV files. It has the ability to process a custom time range, however this will require the user to call methods from outside the class."""
+    """Class to process Swift BAT data for a given GRB. This class handles the processing of Swift BAT data for a given GRB, including checking and applying gain correction, checking and applying mask weighting, extracting light curves for different time periods, and converting the light curve data into CSV files. It has the ability to process a custom time range, however this will require the user to change settings in the config.yaml file. """
     def __init__(
             self,
             GRBName: str
@@ -27,6 +35,51 @@ class ProcessSwiftData:
         Returns:
             None: Output is saved to a CSV file in the `data/processed/{GRBName}` directory.
         """
+        # set the environment variables for HEASoft and CALDB
+        self.__setENV()
+
+        self.GRBName = GRBName
+        self.energyBins = config.preProcessingConfig.swiftBATConfig.download.energyRange
+        self.__data, _ = importData("swiftDataTools/summary_general.csv")
+        self.__triggerID: str = getObservationID(
+            GRBName,
+            self.__data,
+            isTrigID=False
+            )
+
+        # find the right ascension and declination of the GRB from the summary_general.csv file.
+        self.__rightAscension, self.__declination = getCoordinates(self.GRBName, self.__data)
+
+        # set up the paths to the data directories and files
+        self.__setPaths()
+
+        # process the event file into a light curve
+        self.__processToLightCurve()
+
+        # load the light curves into memory
+        self.__loadLightCurves()        
+
+        # generate the spectrum and response matrix for the burst period
+        self.__spectralProcessor: SpectralProcessor = SpectralProcessor(
+            batPath=str(self.__triggerDir),
+            startTime=self.__startTime,
+            stopTime=self.__stopTime,
+            triggerID=self.__triggerID,
+            outputDir=str(self.__eventDir)
+        )
+
+        # might as well calculate the Epeak while the spectrum is being generated.
+        # analyze the spectrum using XSPEC to find the Epeak WRONG! this is not trivial and needs its
+        # own class to handle the XSPEC analysis.
+
+        # convert the light curve counts to photons
+        self.__processToPhotons()
+
+
+    def __setENV(
+            self
+        )-> None:
+        """Sets the environment variables for HEASoft and CALDB."""
         # Check if the HEADAS environment variable is set. If it is not set, print an error message and exit the program. This is important because the HEASoft tools require the HEADAS environment variable to be set in order to function properly. If the variable is not set, the program will not be able to find the necessary tools and will fail to run. By checking for the variable at the beginning of the program, we can ensure that the user is aware of the issue and can take steps to fix it before proceeding with the data processing.
         self.__repoRoot: Path = Path(__file__).resolve().parents[1]
         self.__headasPath = environ.get("HEADAS")
@@ -49,78 +102,256 @@ class ProcessSwiftData:
             environ["CALDBCONFIG"] = str(Path(self.__caldbPath) / 'software' / 'tools' / 'caldb.config')
             environ["CALDBALIAS"] = str(Path(self.__caldbPath) / 'software' / 'tools' / 'alias_config.fits')
 
-        self.GRBName = GRBName
-        self.energyBins = config.preProcessingConfig.swiftBATConfig.download.energyRange
-        self.__data, self.__columnNames = importData("swiftDataTools/summary_general.csv")
-        self.__triggerID: str = getObservationID(
-            GRBName,
-            self.__data,
-            isTrigID=False
-            )
-
-        # find the right ascension and declination of the GRB from the summary_general.csv file.
-        self.__rightAscension, self.__declination = getCoordinates(self.GRBName, self.__data)
-
-        self.__triggerDir: Path = self.__repoRoot / "data" / "reproc" / self.__triggerID / "bat"
-        self.__eventDir: Path = self.__triggerDir / "event"
-        self.__hkDir: Path = self.__triggerDir / "hk"
-        self.__auxDir: Path = self.__triggerDir / "aux"
-        self.__processedDir: Path = self.__repoRoot / "data" / "processed" / self.GRBName
-        self.__processedDir.mkdir(parents=True, exist_ok=True)
-        self.__preBurstLightCurvePath: Path = self.__eventDir / "outputPreBurst.lc"
-        self.__burstLightCurvePath: Path = self.__eventDir / "outputBurst.lc"
-        self.__postBurstLightCurvePath: Path = self.__eventDir / "outputPostBurst.lc"
-
-        # process the event file into a light curve
-        self.__processToLightCurve()
-
-        # load the light curve data from the output files using astropy.io.fits
-        self.__preBurstLightCurve: fits.HDUList = fits.open(self.__preBurstLightCurvePath)
-        self.__burstLightCurve: fits.HDUList = fits.open(self.__burstLightCurvePath)
-        self.__postBurstLightCurve: fits.HDUList = fits.open(self.__postBurstLightCurvePath)
-
-        # generate the spectrum and response matrix for the burst period
-        self.__spectralProcessor: SpectralProcessor = SpectralProcessor(
-            batPath=str(self.__triggerDir),
-            startTime=self.__startTime,
-            stopTime=self.__stopTime,
-            triggerID=self.__triggerID,
-            outputDir=str(self.__eventDir)
-        )
-
-
-
-        # might as well calculate the Epeak while the spectrum is being generated.
-        # analyze the spectrum using XSPEC to find the Epeak WRONG! this is not trivial and needs its
-        # own class to handle the XSPEC analysis.
-
-        # read in the response matrix and find the detector effective area. 
-        self.__effectiveArea: float = self.__detectorEffectiveArea()
-
-        # convert the bins in the light curve to photon counts using the effective area photons = counts / effective area
-        self.__photonCounts, self.__photonErrors = self.__convertCountsToPhotons()
-
-        # potentially recalculate the light curve and uncertaities using monte carlo simulations?
-        # this step is done by Bala et al 2026 on Fermi data.
-        # to do this assume that the light curve is the poisson mean and get the background rate from
-        # the pre-burst and post-burst light curves. See if parametricMCUncertainty.py can be used
-        # for this. They actually only do it for the purpose of detector combination selection and
-        # rebinning. I am not sure that this is necessary for Swift data. I guess that I could see if 
-        # calculating the MVT and rebinning accordingly would change the MVT? My concern is that if it 
-        # overshoots then it would have no way of converging on the correct MVT as it will only ever be
-        # the new bin width.
-
-        # Lookng closer, once they have a convergent MVT/SNR they then use that detector combination and
-        # rebin the light curve into 100us bins. THEN they do monte carlo simulations to get the
-        # uncertainties on the MVT. So it isn't applicable here.
-
-        # I think that this is now ready to be handed into the MVT calculation section of the pipe. 
-        # TODO re-evaluate this on Monday! 
-
 
     def __processToLightCurve(
             self
         )-> None:
+        """
+        Processes the event file into a light curve using `batbinevt`. 
+
+        Raises:
+            ValueError: If the period is not 0, 1, 2, or 3, or if the period is 3 and no custom time range is provided.
+        """
+        # define helpers
+        def extractLightCurve(
+                period: int,
+                customTimeRange: tuple[float, float] = None
+            )-> None:
+            """Does the actual extraction of the light curve.
+
+            Args:
+                period (int): Time period to extract the light curve for. 0 = pre-burst, 1 = burst, 2 = post-burst, 3 = custom. If custom is selected, the user must provide `customTimeRange`
+                customTimeRange (tuple[float, float], optional): Custom time range to extract a custom light curve for. Defaults to None.
+            """
+            # determine the start and stop times for the light curve extraction
+            match period:
+                case 0: # pre-burst
+                    fileName: Path = self.__preBurstLightCurvePath
+                    startTime: float = self.__preBurstMidpoint - 1.0
+                    stopTime: float = self.__preBurstMidpoint + 1.0
+                    print("Extracting pre-burst uniform light curve")
+                case 1: # burst
+                    fileName: Path = self.__burstLightCurvePath
+                    if config.preProcessingConfig.swiftBATConfig.processing.fullBurst:
+                        startTime: float = self.__startTime - 2.0
+                        stopTime: float = self.__stopTime + 2.0
+                        print("Extracting full burst uniform light curve")
+                    else:
+                        startTime: float = self.__startTime - 2.0
+                        stopTime: float = (
+                            self.__startTime
+                            + config.preProcessingConfig.swiftBATConfig.processing.sliceDuration - 2.0
+                            )
+                        print("Extracting burst uniform light curve")
+                case 2: # post-burst
+                    fileName: Path = self.__postBurstLightCurvePath
+                    startTime: float = self.__postBurstMidpoint - 1.0
+                    stopTime: float = self.__postBurstMidpoint + 1.0
+                    print("Extracting post-burst uniform light curve")
+                case 3: # custom
+                    if customTimeRange is None:
+                        raise ValueError("Custom time range must be provided for period 3")
+                    fileName: Path = self.__eventDir / "outputCustom.lc"
+                    startTime: float = customTimeRange[0]
+                    stopTime: float = customTimeRange[1]
+                    print("Extracting custom uniform light curve")
+                case _:
+                    raise ValueError("Invalid period. Must be 0 (pre-burst), 1 (burst), 2 (post-burst), or 3 (custom).")
+            
+            # run batbinevt to create the light curve (uniform bins)
+            output = batbinevt(
+                infile = self.__eventFilename,
+                outfile = str(fileName),
+                outtype = "LC",
+                timedel = config.preProcessingConfig.swiftBATConfig.processing.initialBinSize,
+                timebinalg = "u",
+                energybins = self.energyBins,
+                detmask = str(self.__hkDir / f"sw{self.__triggerID}bdqcb.hk.gz"),
+                tstart = startTime,
+                tstop = stopTime,
+                clobber = "YES",
+                outunits = "COUNTS"
+            )
+            print(output.stdout)
+
+
+        def checkGain()-> bool:
+            """Checks the gain has been applied to BAT data. Uses `fkeyprint` to check the GAINAPP and GAINMETH keywords in the event file header.
+
+            Args:
+                filename (str): The name of the file to be checked. This should be the name of the event file. Assumes that the file is in the current working directory and is still compressed.
+
+            Returns:
+                bool: True if the gain correction has been applied, False if the gain correction has not been applied
+            """
+            print("Checking gain correction")
+            # get the GAINAPP and GAINMETH keywords from the event file header
+            GAINAPP: bool = self.__eventFITS[1].header['GAINAPP']
+            GAINMETH: str = self.__eventFITS[1].header['GAINMETH']
+
+            if GAINAPP and GAINMETH == "FIXEDDAC":
+                print("Gain correction already applied")
+                return True
+            else:
+                print("Gain correction has not been applied.")
+                return False
+
+
+        def correctGain()-> None:
+            """Corrects the gain of BAT data.
+
+            Currently needs to find the calibration file from the HEASARC FTP site.
+            /swift/data/trend/YYYY_MM/bat/bgainoffs
+            see page 31-32 of the BAT Data Analysis Guide https://swift.gsfc.nasa.gov/analysis/bat_swguide_v6_3.pdf
+            Args:
+                filename (str): The name of the file to be corrected. This should be the name of the event file. Assumes that the file is in the current working directory and is still compressed.
+
+            Returns:
+                None: This function does not return anything, but it will correct the gain of the BAT data in the specified file.
+            """
+            print("Gain correction has not been applied.")
+            print("Applying gain correction to file: ", self.__eventFilename)
+            # find the calibration file in the hk directory. 
+            self.__calibrationFile: Path = self.__hkDir / Path(self.__eventFilename).name.replace('bevshsp_uf.evt.gz', 'bcbo01deg00ab.fits.gz')
+            if not self.__calibrationFile.exists():
+                ### download the calibration file - impliment this later
+                raise FileNotFoundError(f"Calibration file not found: {self.__calibrationFile}")
+
+
+            # unzip the file if it is compressed. Needed for the bateconvert command to work. 
+            if self.__eventFilename.endswith(".gz"):
+                self.__unzipFile(self.__eventFilename)
+                self.__eventFilename = self.__eventFilename.replace(".gz", "")
+
+            # run the bateconvert command to correct the gain. 
+            output = bateconvert(
+                infile = self.__eventFilename,
+                calfile = str(self.__calibrationFile),
+                residfile = "CALDB",
+                pulserfile = "CALDB",
+                fitpulserfile = "CALDB",
+                outfile = "NONE",
+                calmode = "INDEF",
+            )
+            print(output.stdout)
+
+
+            # zip the file back up
+            self.__zipFile(self.__eventFilename)
+            self.__eventFilename = self.__eventFilename + ".gz"
+
+
+        def checkMask()-> bool:
+            def checkMaskWeighting()-> bool:
+                """Checks the mask has been applied to BAT data. Uses the output from `fkeyprint` to check the MASKAPP and MASKMETH keywords in the event file header.
+
+                Args:
+                    filename (str): The name of the file to be checked. This should be the name of the event file. Assumes that the file is in the current working directory and is still compressed.
+
+                Returns:
+                    bool: True if the mask has been applied, False if the mask has not been applied
+                """
+                print("Checking mask weighting")
+                # get the right ascension and declination from the event file header
+                rightAscension: float = self.__eventFITS[1].header['BAT_RA']
+                declination: float = self.__eventFITS[1].header['BAT_DEC']
+
+                # load the absolute tolerance for position matching from the config file
+                absoluteTolerance: float = float(config.preProcessingConfig.swiftBATConfig.processing.positionTolerance)
+
+                # check if the right ascension and declination are within the absolute tolerance of the expected values
+                rightAscensionMatch: bool = np.isclose(
+                    rightAscension,
+                    self.__rightAscension,
+                    atol=absoluteTolerance
+                    )
+                declinationMatch: bool = np.isclose(
+                    declination,
+                    self.__declination,
+                    atol=absoluteTolerance
+                    )
+                
+                if rightAscensionMatch and declinationMatch:
+                    print("Right ascension and declination match expected values, mask weighting already applied")
+                    return True
+                else:
+                    print("Right ascension and declination do not match expected values, mask weighting has not been applied")
+                    return False
+
+
+            def checkMaskVersion()-> bool:
+                """Checks the `batmaskwtevt` version that has been applied to the data. Uses the output from `fkeyprint` to check the MASKVER keyword in the event file header.
+
+                Args:
+                    output (FKeyPrintOutput): _description_
+
+                Returns:
+                    bool: _description_
+                """
+                print("Checking batmaskwtevt version")
+                # get the BATCREAT keyword from the event file header
+                BATCREAT: str = self.__eventFITS[1].header['BATCREAT']
+                version: float = float(BATCREAT.split(' ')[1].strip())
+                if version >= 1.16:
+                    print(f"batmaskwtevt version is {version} >= 1.16")
+                    return True
+                else:
+                    print(f"batmaskwtevt version is {version} < 1.16")
+                    return False
+
+
+            bools: list[bool] = []
+            bools.append(checkMaskWeighting())
+            bools.append(checkMaskVersion())
+            return all(bools)
+
+
+        def applyMask()-> None:
+            """Applies the mask to BAT data. Uses `batmaskwtevt` to apply the mask to the event file.
+
+            Args:
+                filename (str): The name of the file to be masked. This should be the name of the event file. Assumes that the file is in the current working directory and is still compressed.
+            """
+            print("Mask has not been applied.")
+            print("Applying mask to file: ", self.__eventFilename)
+
+            # find the attitude file in the aux directory.
+            self.__attitudeFile = self.__auxDir / Path(self.__eventFilename).name.replace('bevshsp_uf.evt.gz', 'sat.fits.gz')
+            if not self.__attitudeFile.exists():
+                ### download the attitude file - impliment this later
+                raise FileNotFoundError(f"Attitude file not found: {self.__attitudeFile}")
+                
+            # find the quality map file in the hk directory.
+            self.__qualityMapFile = self.__hkDir / Path(self.__eventFilename).name.replace('bevshsp_uf.evt.gz', 'bdqcb.hk.gz')
+            if not self.__qualityMapFile.exists():
+                ### download the quality map file - impliment this later
+                raise FileNotFoundError(f"Quality map file not found: {self.__qualityMapFile}")
+
+            # unzip the file if it is compressed. Needed for the batmaskwtevt command to work. 
+            if self.__eventFilename.endswith(".gz"):
+                self.__unzipFile(self.__eventFilename)
+                self.__eventFilename = self.__eventFilename.replace(".gz", "")
+
+            # run the batmaskwtevt command to apply the mask.
+            output = batmaskwtevt(
+                infile = self.__eventFilename,
+                attitude = str(self.__attitudeFile),
+                ra = self.__rightAscension,
+                dec = self.__declination,
+                detmask = str(self.__qualityMapFile),
+                rebalance = "YES",
+                corrections = "default",
+                auxfile = str(self.__eventDir / f"{self.__triggerID}bevtr.fits"),
+                clobber = "YES"
+            )
+            print(output.stdout)
+
+            # zip the file back up
+            self.__zipFile(self.__eventFilename)
+            self.__eventFilename = self.__eventFilename + ".gz"
+
+
+        ##################################################
         # create the output directory if it does not exist
         print(f"Processing data for {GRBName}...")
         self.__eventFilename: str = str(self.__eventDir / f"sw{self.__triggerID}bevshsp_uf.evt.gz")
@@ -129,14 +360,14 @@ class ProcessSwiftData:
         self.__eventFITS: fits.HDUList = fits.open(self.__eventFilename)
 
         # check if the gain correction has been applied to the event file.
-        if not self.__checkGain():
+        if not checkGain():
             # correct the gain if it has not been applied.
-            self.__correctGain()
+            correctGain()
         
         # check if the mask has been applied to the event file. 
-        if not self.__checkMask():
+        if not checkMask():
             # apply the mask if it has not been applied.
-            self.__applyMask()
+            applyMask()
 
         # get the start and stop times of the burst from the summary_general.csv file.
         self.__startTime, self.__stopTime, _ = getStartStopTime(
@@ -160,7 +391,7 @@ class ProcessSwiftData:
 
         # extract the light curves
         for period in range(3):
-            self.__extractLightCurve(period)
+            extractLightCurve(period)
 
 
     def __unzipFile(
@@ -173,7 +404,7 @@ class ProcessSwiftData:
             filename (str): The name of the file to be unzipped. This should be the name of the file that has been compressed using gzip.
         """
         print("Unzipping file: ", filename)
-        system(f"gunzip {filename}")
+        run(["gunzip", filename], check=True)
 
 
     def __zipFile(
@@ -186,273 +417,83 @@ class ProcessSwiftData:
             filename (str): The name of the file to be zipped. This should be the name of the file that is to be compressed using gzip.
         """
         print("Zipping file: ", filename)
-        system(f"gzip {filename} -v")
+        run(["gzip", filename, "-v"], check=True)
 
 
-    def __checkGain(
-            self
-        )-> bool:
-        """Checks the gain has been applied to BAT data. Uses `fkeyprint` to check the GAINAPP and GAINMETH keywords in the event file header.
-
-        Args:
-            filename (str): The name of the file to be checked. This should be the name of the event file. Assumes that the file is in the current working directory and is still compressed.
-
-        Returns:
-            bool: True if the gain correction has been applied, False if the gain correction has not been applied
-        """
-        print("Checking gain correction")
-        # get the GAINAPP and GAINMETH keywords from the event file header
-        GAINAPP: bool = self.__eventFITS[1].header['GAINAPP']
-        GAINMETH: str = self.__eventFITS[1].header['GAINMETH']
-
-        if GAINAPP and GAINMETH == "FIXEDDAC":
-            print("Gain correction already applied")
-            return True
-        else:
-            print("Gain correction has not been applied.")
-            return False
-
-
-    def __correctGain(
+    def __setPaths(
             self
         )-> None:
-        """Corrects the gain of BAT data.
-
-        Currently needs to find the calibration file from the HEASARC FTP site.
-        /swift/data/trend/YYYY_MM/bat/bgainoffs
-        see page 31-32 of the BAT Data Analysis Guide https://swift.gsfc.nasa.gov/analysis/bat_swguide_v6_3.pdf
-        Args:
-            filename (str): The name of the file to be corrected. This should be the name of the event file. Assumes that the file is in the current working directory and is still compressed.
-
-        Returns:
-            None: This function does not return anything, but it will correct the gain of the BAT data in the specified file.
-        """
-        print("Gain correction has not been applied.")
-        print("Applying gain correction to file: ", self.__eventFilename)
-        # find the calibration file in the hk directory. 
-        self.__calibrationFile: Path = self.__hkDir / Path(self.__eventFilename).name.replace('bevshsp_uf.evt.gz', 'bcbo01deg00ab.fits.gz')
-        if not self.__calibrationFile.exists():
-            ### download the calibration file - impliment this later
-            raise FileNotFoundError(f"Calibration file not found: {self.__calibrationFile}")
+        """Sets the paths to the data directories and files."""
+        self.__triggerDir: Path = self.__repoRoot / "data" / "reproc" / self.__triggerID / "bat"
+        self.__eventDir: Path = self.__triggerDir / "event"
+        self.__hkDir: Path = self.__triggerDir / "hk"
+        self.__auxDir: Path = self.__triggerDir / "aux"
+        self.__processedDir: Path = self.__repoRoot / "data" / "processed" / self.GRBName
+        self.__processedDir.mkdir(parents=True, exist_ok=True)
+        self.__preBurstLightCurvePath: Path = self.__eventDir / "outputPreBurst.lc"
+        self.__burstLightCurvePath: Path = self.__eventDir / "outputBurst.lc"
+        self.__postBurstLightCurvePath: Path = self.__eventDir / "outputPostBurst.lc"
 
 
-        # unzip the file if it is compressed. Needed for the bateconvert command to work. 
-        if self.__eventFilename.endswith(".gz"):
-            self.__unzipFile(self.__eventFilename)
-            self.__eventFilename = self.__eventFilename.replace(".gz", "")
-
-        # run the bateconvert command to correct the gain. 
-        output = bateconvert(
-            infile = self.__eventFilename,
-            calfile = str(self.__calibrationFile),
-            residfile = "CALDB",
-            pulserfile = "CALDB",
-            fitpulserfile = "CALDB",
-            outfile = "NONE",
-            calmode = "INDEF",
-        )
-        print(output.stdout)
-
-
-        # zip the file back up
-        self.__zipFile(self.__eventFilename)
-        self.__eventFilename = self.__eventFilename + ".gz"
-
-
-    def __checkMask(
+    def __loadLightCurves(
             self
-        )-> bool:
-        
-        def checkMaskWeighting(
+        )-> None:
+        """Loads a light curve from a FITS file using astropy.io.fits."""
+        # load the light curve data from the output files using astropy.io.fits
+        self.__preBurstLightCurve: fits.HDUList = fits.open(self.__preBurstLightCurvePath)
+        self.__burstLightCurve: fits.HDUList = fits.open(self.__burstLightCurvePath)
+        self.__postBurstLightCurve: fits.HDUList = fits.open(self.__postBurstLightCurvePath)
+
+
+    def __processToPhotons(
             self
-        )-> bool:
-            """Checks the mask has been applied to BAT data. Uses the output from `fkeyprint` to check the MASKAPP and MASKMETH keywords in the event file header.
+        )-> None:
+
+        def convertCountsToPhotons(
+                lightCurve: fits.HDUList,
+                effectiveArea: float
+            )-> np.ndarray:
+            """
+            Converts the counts in the light curve to photons using the effective area. The conversion is done by dividing the counts by the effective area.
+            """
+            # get the counts and errors from the light curve
+            counts: np.ndarray = lightCurve[1].data['COUNTS']
+            errors: np.ndarray = lightCurve[1].data['ERROR']
+
+            # get the number of detectors from the light curve header
+            numberOfDetectors: int = lightCurve[1].header['NGOODPIX']
+
+            # convert the counts to photons using the effective area
+            photons: np.ndarray = counts * numberOfDetectors / effectiveArea
+
+            # propagate the errors using the effective area
+            photonErrors: np.ndarray = errors * numberOfDetectors / effectiveArea
+
+            return photons, photonErrors
+
+
+        def writePhotonCountsToCSV(
+                photonCounts: np.ndarray,
+                photonErrors: np.ndarray,
+                outputPath: Path
+            )-> None:
+            """Writes the photon counts and errors to a CSV file.
 
             Args:
-                filename (str): The name of the file to be checked. This should be the name of the event file. Assumes that the file is in the current working directory and is still compressed.
-
-            Returns:
-                bool: True if the mask has been applied, False if the mask has not been applied
+                photonCounts (np.ndarray): The photon counts to write to the CSV file.
+                photonErrors (np.ndarray): The photon errors to write to the CSV file.
+                outputPath (Path): The path to the output CSV file.
             """
-            print("Checking mask weighting")
-            # get the right ascension and declination from the event file header
-            rightAscension: float = self.__eventFITS[1].header['BAT_RA']
-            declination: float = self.__eventFITS[1].header['BAT_DEC']
-
-            # load the absolute tolerance for position matching from the config file
-            absoluteTolerance: float = float(config.preProcessingConfig.swiftBATConfig.processing.positionTolerance)
-
-            # check if the right ascension and declination are within the absolute tolerance of the expected values
-            rightAscensionMatch: bool = np.isclose(
-                rightAscension,
-                self.__rightAscension,
-                atol=absoluteTolerance
-                )
-            declinationMatch: bool = np.isclose(
-                declination,
-                self.__declination,
-                atol=absoluteTolerance
-                )
-            
-            if rightAscensionMatch and declinationMatch:
-                print("Right ascension and declination match expected values, mask weighting already applied")
-                return True
-            else:
-                print("Right ascension and declination do not match expected values, mask weighting has not been applied")
-                return False
+            # write the photon counts and errors to a CSV file
+            np.savetxt(
+                outputPath,
+                np.column_stack((photonCounts, photonErrors)),
+                delimiter=",",
+                header="counts, errors",
+                comments=""
+            )
 
 
-        def checkMaskVersion(
-            self
-        )-> bool:
-            """Checks the `batmaskwtevt` version that has been applied to the data. Uses the output from `fkeyprint` to check the MASKVER keyword in the event file header.
-
-            Args:
-                output (FKeyPrintOutput): _description_
-
-            Returns:
-                bool: _description_
-            """
-            print("Checking batmaskwtevt version")
-            # get the BATCREAT keyword from the event file header
-            BATCREAT: str = self.__eventFITS[1].header['BATCREAT']
-            version: float = float(BATCREAT.split(' ')[1].strip())
-            if version >= 1.16:
-                print(f"batmaskwtevt version is {version} >= 1.16")
-                return True
-            else:
-                print(f"batmaskwtevt version is {version} < 1.16")
-                return False
-
-
-        bools: list[bool] = []
-        bools.append(checkMaskWeighting(self))
-        bools.append(checkMaskVersion(self))
-        return all(bools)
-
-
-    def __applyMask(
-            self
-        )-> None:
-        """Applies the mask to BAT data. Uses `batmaskwtevt` to apply the mask to the event file.
-
-        Args:
-            filename (str): The name of the file to be masked. This should be the name of the event file. Assumes that the file is in the current working directory and is still compressed.
-        """
-        print("Mask has not been applied.")
-        print("Applying mask to file: ", self.__eventFilename)
-
-        # find the attitude file in the aux directory.
-        self.__attitudeFile: Path = self.__auxDir / Path(self.__eventFilename).name.replace('bevshsp_uf.evt.gz', 'sat.fits.gz')
-        if not self.__attitudeFile.exists():
-            ### download the attitude file - impliment this later
-            raise FileNotFoundError(f"Attitude file not found: {self.__attitudeFile}")
-            
-        # find the quality map file in the hk directory.
-        self.__qualityMapFile: Path = self.__hkDir / Path(self.__eventFilename).name.replace('bevshsp_uf.evt.gz', 'bdqcb.hk.gz')
-        if not self.__qualityMapFile.exists():
-            ### download the quality map file - impliment this later
-            raise FileNotFoundError(f"Quality map file not found: {self.__qualityMapFile}")
-
-        # unzip the file if it is compressed. Needed for the batmaskwtevt command to work. 
-        if self.__eventFilename.endswith(".gz"):
-            self.__unzipFile(self.__eventFilename)
-            self.__eventFilename = self.__eventFilename.replace(".gz", "")
-
-        # run the batmaskwtevt command to apply the mask.
-        output = batmaskwtevt(
-            infile = self.__eventFilename,
-            attitude = str(self.__attitudeFile),
-            ra = self.__rightAscension,
-            dec = self.__declination,
-            detmask = str(self.__qualityMapFile),
-            rebalance = "YES",
-            corrections = "default",
-            auxfile = str(self.__eventDir / f"{self.__triggerID}bevtr.fits"),
-            clobber = "YES"
-        )
-        print(output.stdout)
-
-        # zip the file back up
-        self.__zipFile(self.__eventFilename)
-        self.__eventFilename = self.__eventFilename + ".gz"
-
-
-    def __extractLightCurve(
-            self,
-            period: int,
-            customTimeRange: tuple[float, float] = None
-        )-> None:
-        """Extracts the lightcurve using `batbinevt`.
-
-        Args:
-            period (int): Time period to extract the light curve for. 0 = pre-burst, 1 = burst, 2 = post-burst, 3 = custom. If custom is selected, the user must provide `customTimeRange`
-            customTimeRange (tuple[float, float], optional): Custom time range to extract a custom light curve for. Defaults to None.
-
-        Raises:
-            ValueError: If the period is not 0, 1, 2, or 3, or if the period is 3 and no custom time range is provided.
-        """
-        # determine the start and stop times for the light curve extraction
-        match period:
-            case 0: # pre-burst
-                fileName: Path = self.__preBurstLightCurvePath
-                startTime: float = self.__preBurstMidpoint - 1.0
-                stopTime: float = self.__preBurstMidpoint + 1.0
-                print("Extracting pre-burst uniform light curve")
-            case 1: # burst
-                fileName: Path = self.__burstLightCurvePath
-                if config.preProcessingConfig.swiftBATConfig.processing.fullBurst:
-                    startTime: float = self.__startTime - 2.0
-                    stopTime: float = self.__stopTime + 2.0
-                    print("Extracting full burst uniform light curve")
-                else:
-                    startTime: float = self.__startTime - 2.0
-                    stopTime: float = (
-                        self.__startTime
-                        + config.preProcessingConfig.swiftBATConfig.processing.sliceDuration - 2.0
-                        )
-                    print("Extracting burst uniform light curve")
-            case 2: # post-burst
-                fileName: Path = self.__postBurstLightCurvePath
-                startTime: float = self.__postBurstMidpoint - 1.0
-                stopTime: float = self.__postBurstMidpoint + 1.0
-                print("Extracting post-burst uniform light curve")
-            case 3: # custom
-                if customTimeRange is None:
-                    raise ValueError("Custom time range must be provided for period 3")
-                fileName: Path = self.__eventDir / "outputCustom.lc"
-                startTime: float = customTimeRange[0]
-                stopTime: float = customTimeRange[1]
-                print("Extracting custom uniform light curve")
-            case _:
-                raise ValueError("Invalid period. Must be 0 (pre-burst), 1 (burst), 2 (post-burst), or 3 (custom).")
-        
-        # run batbinevt to create the light curve (uniform bins)
-        output = batbinevt(
-            infile = self.__eventFilename,
-            outfile = str(fileName),
-            outtype = "LC",
-            timedel = config.preProcessingConfig.swiftBATConfig.processing.initialBinSize,
-            timebinalg = "u",
-            energybins = self.energyBins,
-            detmask = str(self.__hkDir / f"sw{self.__triggerID}bdqcb.hk.gz"),
-            tstart = startTime,
-            tstop = stopTime,
-            clobber = "YES",
-            outunits = "COUNTS"
-        )
-        print(output.stdout)
-
-
-    def __detectorEffectiveArea(
-            self
-        )-> float:
-        """
-        Reads in the response matrix and finds the effective area of the detector. The effective area is calculated by summing the elements of the response matrix.
-
-        Returns:
-            float: The effective area of the detector.
-        """
         # read in the response matrix using astropy.io.fits
         responseMatrixFITS: fits.HDUList = fits.open(self.__spectralProcessor.responseMatrixPath)[1]
 
@@ -478,44 +519,37 @@ class ProcessSwiftData:
 
         # calculate the effective area by averaging the row sums of the response matrix. 
         effectiveArea: float = rowSums.mean()
-        print(f"Effective area of the detector: {effectiveArea} cm^2")
 
-        return effectiveArea
+        # convert the bins in the light curve to photon counts using the effective area photons = counts / effective area
+        self.photonCounts, self.photonErrors = convertCountsToPhotons(
+            self.__burstLightCurve,
+            effectiveArea
+            )
+        self.photonCountsPreBurst, self.photonErrorsPreBurst = convertCountsToPhotons(
+            self.__preBurstLightCurve,
+            effectiveArea
+            )
+        self.photonCountsPostBurst, self.photonErrorsPostBurst = convertCountsToPhotons(
+            self.__postBurstLightCurve,
+            effectiveArea
+            )
 
-
-    def __convertCountsToPhotons(
-            self
-        )-> np.ndarray:
-        """
-        Converts the counts in the light curve to photons using the effective area. The conversion is done by dividing the counts by the effective area.
-        """
-        # get the counts and errors from the light curve
-        counts: np.ndarray = self.__burstLightCurve[1].data['COUNTS']
-        errors: np.ndarray = self.__burstLightCurve[1].data['ERROR']
-
-        # get the number of detectors from the light curve header
-        numberOfDetectors: int = self.__burstLightCurve[1].header['NGOODPIX']
-
-        # convert the counts to photons using the effective area
-        photons: np.ndarray = counts * numberOfDetectors / self.__effectiveArea
-
-        # propagate the errors using the effective area
-        photonErrors: np.ndarray = errors * numberOfDetectors / self.__effectiveArea
-
-        return photons, photonErrors
-
-
-
-
-
-
-
-
-
-
-
-
-
+        # write the photon counts to a CSV file in the processed directory
+        writePhotonCountsToCSV(
+            self.photonCountsPreBurst,
+            self.photonErrorsPreBurst,
+            self.__processedDir / "photonCountsPreBurst.csv"
+        )
+        writePhotonCountsToCSV(
+            self.photonCounts,
+            self.photonErrors,
+            self.__processedDir / "photonCounts.csv"
+        )
+        writePhotonCountsToCSV(
+            self.photonCountsPostBurst,
+            self.photonErrorsPostBurst,
+            self.__processedDir / "photonCountsPostBurst.csv"
+        )
 
 
 
@@ -525,5 +559,3 @@ if __name__ == "__main__":
     config = importConfiguration("config.yaml")
     GRBName: str = "GRB080319B"
     data: ProcessSwiftData = ProcessSwiftData(GRBName)
-
-

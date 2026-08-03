@@ -1,3 +1,8 @@
+"""
+Initial setup for the Swift BAT data tools.
+TODO move this into a general setup script for the whole tool kit.
+"""
+
 from swiftDataTools import swiftBATCatalogueGRB
 from pathlib import Path
 

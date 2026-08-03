@@ -144,7 +144,7 @@ class ProcessSwiftData:
                             )
                         print("Extracting burst uniform light curve")
                 case 2: # post-burst
-                    fileName: Path = self.__postBurstLightCurvePath
+                    fileName = self.__postBurstLightCurvePath
                     startTime: float = self.__postBurstMidpoint - 1.0
                     stopTime: float = self.__postBurstMidpoint + 1.0
                     print("Extracting post-burst uniform light curve")
@@ -212,7 +212,7 @@ class ProcessSwiftData:
             print("Gain correction has not been applied.")
             print("Applying gain correction to file: ", self.__eventFilename)
             # find the calibration file in the hk directory. 
-            self.__calibrationFile: Path = self.__hkDir / Path(self.__eventFilename).name.replace('bevshsp_uf.evt.gz', 'bcbo01deg00ab.fits.gz')
+            self.__calibrationFile = self.__hkDir / Path(self.__eventFilename).name.replace('bevshsp_uf.evt.gz', 'bcbo01deg00ab.fits.gz')
             if not self.__calibrationFile.exists():
                 ### download the calibration file - impliment this later
                 raise FileNotFoundError(f"Calibration file not found: {self.__calibrationFile}")

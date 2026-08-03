@@ -1,8 +1,9 @@
 """
-This needs to be split into a terminal running script with a class that can be imported into other
-scripts. It also needs to use 'with chdir()' to change the working directory rather than using 
-os as it will automatically change back to the original working directory when the block is exited.
-Further, the SwiftBAT tools should be in their own directory.
+Complete pipe for processing Swift BAT data for a given GRB name. Steps:
+1. Download the data from the swift.ac.uk archive using wget.
+2. Process the data using SwiftProcessor to generate photon counts.
+3. Calculate the time-resolved MVT using the photon counts and errors.
+4. Calculate the time-resolved Epeak.
 """
 
 from swiftDataTools.swiftBATCatalogueGRB import importData, getObservationID

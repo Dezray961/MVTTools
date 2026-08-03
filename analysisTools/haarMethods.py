@@ -364,11 +364,8 @@ def haarNDWT(
             baseNoiseVarianceSlice + repetitionIndex * noiseVarianceStrideOffset
         )
 
-    # TODO rename for clarity remove later if either this or lengthOfData aren't modified
-    activeSignalLength: int = lengthOfData
-
     # find the maximum wavelet scale index using the bit length of the active signal length minus one
-    maximumWaveletScaleIndex: int = (activeSignalLength - 1).bit_length()
+    maximumWaveletScaleIndex: int = (lengthOfData - 1).bit_length()
 
     # boundary guard checks
     if binFactor <= 0:
@@ -403,7 +400,7 @@ def haarNDWT(
         # filter with bitwise operations
         validScalesMask: np.ndarray = (
             (waveletScaleBlockWidths > 0)
-            & ((waveletScaleBlockWidths << 1) <= activeSignalLength)
+            & ((waveletScaleBlockWidths << 1) <= lengthOfData)
         )
         waveletScaleBlockWidths = waveletScaleBlockWidths[validScalesMask]
 
@@ -436,7 +433,7 @@ def haarNDWT(
     # filter with bitwise operations to ensure valid scales
     validScaleBoundsMask: np.ndarray = (
         (cleanedUniqueScales > 0)
-        & ((cleanedUniqueScales << 1) <= activeSignalLength)
+        & ((cleanedUniqueScales << 1) <= lengthOfData)
     )
     cleanedUniqueScales: np.ndarray = cleanedUniqueScales[validScaleBoundsMask]
 
@@ -469,12 +466,12 @@ def haarNDWT(
         squaredScaleBlockWidth: int = float(waveletScaleBlockWidth * waveletScaleBlockWidth)
 
         # calculate the boundary correction for the active window
-        validWindowCount: float = float(activeSignalLength - twoScale + 1)
-        boundaryCorrectionFactor: float = activeSignalLength / validWindowCount
+        validWindowCount: float = float(lengthOfData - twoScale + 1)
+        boundaryCorrectionFactor: float = lengthOfData / validWindowCount
 
         # pre-cache slices
-        sliceStart: np.ndarray = integralSignalData[twoScale:activeSignalLength + 1]
-        sliceMiddle: np.ndarray = integralSignalData[waveletScaleBlockWidth:activeSignalLength - waveletScaleBlockWidth + 1]
+        sliceStart: np.ndarray = integralSignalData[twoScale:lengthOfData + 1]
+        sliceMiddle: np.ndarray = integralSignalData[waveletScaleBlockWidth:lengthOfData - waveletScaleBlockWidth + 1]
         sliceEnd: np.ndarray = integralSignalData[:validWindowCount]
 
         # non-decimated calculation and squaring of the Haar wavelet coefficients
@@ -485,11 +482,11 @@ def haarNDWT(
 
         # variance and weight window slicing
         waveletVarianceWindows: np.ndarray = (
-            integralNoiseVariance[twoScale:activeSignalLength + 1]
+            integralNoiseVariance[twoScale:lengthOfData + 1]
             - integralNoiseVariance[:validWindowCount]
         )
         normalisedLocalWeights: np.ndarray = (
-            (integralWeights[twoScale:activeSignalLength + 1]
+            (integralWeights[twoScale:lengthOfData + 1]
             - integralWeights[:validWindowCount])
             / float(twoScale)
         )

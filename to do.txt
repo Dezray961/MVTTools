@@ -1,44 +1,10 @@
-Adapt the swiftDataTools to output a uniform time series                        ✅
-Adapt importLightCurve.py to work with the new pipline                          ✅
-Make a script that can denoise a dataset.                                       ✅
-Make a script that can re-bin the data into constant S/N = 5 bins               ✅
-    Look at how Golkhou's code does this                                        ✅
-Look into the uncertainty after denoising                                       ✅
-    Parametric Monte Carlo uncertainty propagation is the answer?               ✅
-Make a script to impliment the MC method                                        ✅
-Make or adapt old script that can find the undecimated Haar Wavelet transform
-    HaarCoefficient.cpp                                                         ✅
-    HaarCoefficient.hpp                                                         ✅
-    permuteAnalysis.cpp
-    permuteAnalysis.hpp
-    findMVT.cpp
-    findMVT.py
-Make a script that can:
-    fit a straight line to the start of the Haar coefficients
-    perform a Δχ² test on the Haar coefficients and the straight line
-    find the 2σ deviation from the straight line. The time bin is the MVT
-Make a script that can plot the MVT as a function of time for a full GRB
-    Chop the data up
-        Windows should be 1/3 seconds long
-    Feed to pipeline
-    plot
-Split out shell operations into a seperate script doing at home                 ✅
-    script for shell operations                                                 ✅
-    change existing code to utalise it                                          ✅
-        swiftBATCatalogueGRB.py                                                 ✅
-        swiftBATDataFetcher.py                                                  ✅
-        swiftBATInitalProcessing.py                                             ✅
-        swiftBATInitialSetup.py                                                 ✅
-        swiftBATProcessGRB.py                                                   ✅
+swiftDataTools
+* Find out why CALDB and PERL are causing issues. Is this just my laptop or more general?
+* Move the initial setup for the swift data tools into a general initial setup script
+* Impliment logging
+* Impliment config.yaml in all tools
 
-More vague
-Impliment tools to import Fermi data and process it to the same state as the SwiftBAT data
-Set up VPN on desktop
-
-
-
-Work out how to actually calculate the MVT from the data rather than by eye.
-
+analysisTools
 
 
 

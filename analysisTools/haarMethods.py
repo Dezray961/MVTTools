@@ -1276,11 +1276,25 @@ def haarPowerMod(
             outputPlotFilename=outputExportFilename+'haar_mod.png'
 
             # square-root transformation
-            transformedSignalPower: np.ndarray = np.sqrt(signalPowerSpectrum[validSignalMask])
-            transformedUncertainty: np.ndarray = (
-                differentialPowerUncertainty[validSignalMask] / (2.0 * transformedSignalPower)
+            safeSignalPower: np.ndarray = np.clip(
+                signalPowerSpectrum[validSignalMask],
+                0.0,
+                None
             )
-            transformedBaselineNoise: np.ndarray = np.sqrt(baselineNoisePowerSpectrum[validSignalMask])
+            transformedSignalPower: np.ndarray = np.sqrt(safeSignalPower)
+            transformedUncertainty: np.ndarray = np.divide(
+                differentialPowerUncertainty[validSignalMask],
+                2.0 * transformedSignalPower,
+                out = np.zeros_like(transformedSignalPower),
+                where = transformedSignalPower > 0.0
+            )
+            transformedBaselineNoise: np.ndarray = np.sqrt(
+                np.clip(
+                    baselineNoisePowerSpectrum[validSignalMask],
+                    0.0,
+                    None
+                )
+            )
 
             # plot labels
             plt.xlabel(
@@ -1477,11 +1491,28 @@ def processSingleWindowWorker(
             )
         
         # Extract minimumVariabilityTimescale (index 2) and minimumVariabilityTimescaleUncertainty (index 3)
-        minimumVariabilityTimescaleMs: float = round(result[2] * 1000.0, 3)
-        minimumVariabilityTimescaleUncertaintyMs: float = round(result[3] * 1000.0, 3)
+        minimumVariabilityTimescaleSeconds: float = float(result[2])
+        minimumVariabilityTimescaleUncertaintySeconds: float = float(result[3])
+
+        if (
+            not np.isfinite(minimumVariabilityTimescaleSeconds)
+            or minimumVariabilityTimescaleSeconds <= 0.0
+            or minimumVariabilityTimescaleSeconds > windowDurationBins * binSizeInSeconds
+        ):
+            minimumVariabilityTimescaleMs = np.nan
+        else:
+            minimumVariabilityTimescaleMs = round(minimumVariabilityTimescaleSeconds * 1000.0, 3)
+
+        if (
+            not np.isfinite(minimumVariabilityTimescaleUncertaintySeconds)
+            or minimumVariabilityTimescaleUncertaintySeconds < 0.0
+        ):
+            minimumVariabilityTimescaleUncertaintyMs = np.nan
+        else:
+            minimumVariabilityTimescaleUncertaintyMs = round(minimumVariabilityTimescaleUncertaintySeconds * 1000.0, 3)
     except Exception as calculationException:
-        minimumVariabilityTimescaleMs: float = 0.0
-        minimumVariabilityTimescaleUncertaintyMs: float = 0.0
+        minimumVariabilityTimescaleMs: float = np.nan
+        minimumVariabilityTimescaleUncertaintyMs: float = np.nan
         logging.warning(f"Error during MVT calculation for window at {windowCenterTimeSeconds}s: {calculationException}")
         
     # return an isolated dictionary
@@ -1499,6 +1530,7 @@ def timeResolvedMVT(
     errors: np.ndarray, 
     source: str,
     absoluteStartTimeSeconds: float = 0.0,
+    timeWindowSizeSeconds: float = None,
 ) -> list:
     """
     Calculates the Minimum Variability Timescale (MVT) using a sliding time window,
@@ -1516,7 +1548,10 @@ def timeResolvedMVT(
     """
     # get configuration settings from the config file
     binSizeInSeconds: float = getInitialBinSize(source)
-    windowDurationSeconds: float = float(config.mvtAnalysisConfig.timeResolvedMVTSettings.timeWindowSize)
+    if timeWindowSizeSeconds is None:
+        timeWindowSizeSeconds = float(config.mvtAnalysisConfig.timeResolvedMVTSettings.timeWindowSize)
+    else:
+        windowDurationSeconds: float = timeWindowSizeSeconds
     stepDurationSeconds: float = float(config.mvtAnalysisConfig.timeResolvedMVTSettings.stepDurationSeconds)
     haarPowerMod_kwargs: dict = {
         'maxBackgroundTimescale': float(config.mvtAnalysisConfig.haarPowerModelSettings.maxBackgroundTimescale),
@@ -1619,7 +1654,8 @@ if __name__ == "__main__":
     results = haarPowerMod(
         photonCounts,
         photonErrors,
-        shouldGeneratePlots=True
+        shouldGeneratePlots=True,
+        outputExportFilename="/home/derekpinkett/coding/MVTTools/plots/GRB080319B_haar_power_mod"
     )
 
 

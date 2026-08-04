@@ -11,6 +11,8 @@ swiftDataTools
 
 analysisTools
 * Time-resolved MVT from photon counts and errors
+* Fix the flux variation - delta t plot
+* Was GRB 080319B caught by Fermi?
 * time-resolved Epeak
 * something to compare them?
 

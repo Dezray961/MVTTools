@@ -1,6 +1,11 @@
 # to install yaml: conda install -c anaconda pyyaml
 
-def importConfiguration(configFilePath: str = "config.yaml"):
+from pathlib import Path
+
+
+CONFIG_FILE_PATH = Path(__file__).resolve().parent / "config.yaml"
+
+def importConfiguration(configFilePath: str | Path = CONFIG_FILE_PATH):
     """Load the configuration from a YAML file and return it as a DictToClass object.
     
     Args:
@@ -30,7 +35,7 @@ def importConfiguration(configFilePath: str = "config.yaml"):
                 raise AttributeError(f"'DictToClass' object has no attribute '{name}'")
 
 
-    configYAML = yaml.safe_load(open(configFilePath, 'r'))
+    configYAML = yaml.safe_load(open(Path(configFilePath), 'r'))
     return DictToClass(configYAML)
 
 

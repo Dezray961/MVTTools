@@ -1,0 +1,173 @@
+from pathlib import Path
+import importlib
+
+from ruamel.yaml import YAML
+
+
+# setup yaml stuff
+yaml = YAML()
+yaml.indent(mapping=2, sequence=4, offset=2)
+yaml.preserve_quotes = True
+
+projectRootPath = Path(__file__).resolve().parent
+configFilePath = "config.yaml"
+
+# load the config file
+with open(configFilePath, "r") as f:
+    config = yaml.load(f)
+
+# set the slice duration for the time-resolved MVT calculation
+sliceDuration = 60.0 # seconds
+
+# update the config file with the new slice duration
+config['preProcessingConfig']['swiftBATConfig']['processing']['sliceDuration'] = sliceDuration
+
+# save the updated config file
+with open(configFilePath, "w") as f:
+    yaml.dump(config, f)
+
+from time import time
+import numpy as np
+import loadConfig
+import analysisTools.haarMethods as haarMethods
+import swiftDataTools.swiftBATPipe as swiftBATPipe
+
+importlib.reload(loadConfig)
+importlib.reload(haarMethods)
+importlib.reload(swiftBATPipe)
+
+from loadConfig import config
+
+processSwiftBATData = swiftBATPipe.processSwiftBATData
+haarPowerMod = haarMethods.haarPowerMod
+timeResolvedMVT = haarMethods.timeResolvedMVT
+haarDenoise = haarMethods.haarDenoise
+
+#startTime = time()
+#
+#grbName: str = "GRB080319B"
+#processSwiftBATData(
+#    GRBName = grbName,
+#    download = False,
+#    deleteOriginal = False,
+#    )
+#
+#endTime = time()
+#print(f"Total processing time: {endTime - startTime:.2f} seconds")
+
+def csvReader(
+        filepath: str
+    ) -> tuple:
+    """
+    Reads a CSV file containing photon counts and errors, returning them as numpy arrays.
+    """
+    filePath: str = filepath + "/photonCounts.csv"
+    data: np.ndarray = np.genfromtxt(filePath, delimiter=',', skip_header=1)
+    counts: np.ndarray = data[:, 0]
+    errors: np.ndarray = data[:, 1]
+    return counts, errors
+
+
+# get the photon counts and errors from the CSV file
+photonCounts, photonErrors = csvReader("/home/derekpinkett/coding/MVTTools/data/processed/GRB080319B")
+
+# denoise the photon counts
+photonCounts = haarDenoise(photonCounts, photonErrors)
+
+
+
+
+import matplotlib.pyplot as plt
+import matplotlib.offsetbox as offsetbox
+windowSizes = [1.0, 2.0, 4.0, 8.0, 16.0, 32.0]
+
+
+fig, axs = plt.subplots(
+    len(windowSizes)//2,
+    len(windowSizes)//(len(windowSizes)//2),
+    figsize=(10, 6),
+    layout='constrained',
+    sharex=True
+    )
+axs = axs.flatten()
+for i, windowSize in enumerate(windowSizes):
+    results = timeResolvedMVT(
+        photonCounts,
+        photonErrors,
+        source = "swift",
+        timeWindowSizeSeconds = windowSize
+    )
+
+    # extract the center times, MVT and MVT errors from the results
+    times: list = []
+    MVTs: list = []
+    MVTErrors: list = []
+
+    for result in results:
+        times.append(result['centerTimeSeconds'])
+        MVTs.append(result['mvtMs'])
+        MVTErrors.append(result['mvtErrMs'])
+
+    # convert the lists to numpy arrays for easier plotting
+    times = np.array(times)
+    MVTs = np.array(MVTs)
+    MVTErrors = np.array(MVTErrors)
+
+    # clean up the results to remove any NaN values
+    valid_indices = ~np.isnan(MVTs)
+    validMVTs = MVTs[valid_indices]
+
+
+    ax = axs[i]
+    ax.plot(
+        times,
+        MVTs,
+        label='MVT',
+        color='blue',
+        linewidth=1.0
+        )
+
+    at = offsetbox.AnchoredText(
+        f'Window Size: {windowSize} s', 
+        loc='upper right',           # Placement inside the axes
+        frameon=True,                # Add a white background box
+        prop=dict(size=10)
+    )
+    at.patch.set_boxstyle("round,pad=0.2")
+    at.patch.set_alpha(0.8)          # Slight transparency for overlapping data
+    ax.add_artist(at)
+
+    
+    if i < 4: 
+        ax.set_xticklabels([])
+    else:
+        ax.set_xlabel('Time [s]')
+        
+    if i % 2 != 0: 
+        ax.yaxis.tick_right()
+        ax.yaxis.set_label_position('right')
+        ax.set_ylabel('MVT [$m$s]')
+    else:
+        ax.set_ylabel('MVT [$m$s]')
+    ax.vlines(
+        x=2,
+        ymin=np.min(validMVTs),
+        ymax=np.max(validMVTs),
+        color='grey',
+        linestyle='--',
+        label='Trigger Time'
+        )
+    ax.hlines(
+        y=40,
+        xmin=np.min(times),
+        xmax=np.max(times),
+        color='grey',
+        linestyle='-',
+        label='GB14 result'
+        )
+    ax.set_xlim(np.min(times), np.max(times))
+    ax.set_ylim(0, np.max(validMVTs) * 1.1)
+    print(f"Window Size: {windowSize} s, complete.")
+plt.subplots_adjust(wspace=0, hspace=0)
+axs[-1].legend(loc='upper left')
+plt.show()

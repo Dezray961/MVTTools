@@ -35,14 +35,13 @@ def importConfiguration(configFilePath: str = "config.yaml"):
 
 
 def getInitialBinSize(
-        config,
         source: str
     ) -> float:
     """Get the initial bin size for a given source from the configuration. Seperate function to allow for future missions to be added.
 
     Args:
         config: The configuration object returned by importConfiguration().
-        source (str): The source of the data e.g. "Swift", "Fermi", "SVOM".
+        source (str): The source of the data e.g. "swift", "fermi", "svom".
 
     Returns:
         float: The initial bin size for the specified source.

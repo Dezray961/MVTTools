@@ -522,32 +522,32 @@ class ProcessSwiftData:
         effectiveArea: float = rowSums.mean()
 
         # convert the bins in the light curve to photon counts using the effective area photons = counts / effective area
-        self.photonCounts, self.photonErrors = convertCountsToPhotons(
+        self.__photonCounts, self.photonErrors = convertCountsToPhotons(
             self.__burstLightCurve,
             effectiveArea
             )
-        self.photonCountsPreBurst, self.photonErrorsPreBurst = convertCountsToPhotons(
+        self.__photonCountsPreBurst, self.photonErrorsPreBurst = convertCountsToPhotons(
             self.__preBurstLightCurve,
             effectiveArea
             )
-        self.photonCountsPostBurst, self.photonErrorsPostBurst = convertCountsToPhotons(
+        self.__photonCountsPostBurst, self.photonErrorsPostBurst = convertCountsToPhotons(
             self.__postBurstLightCurve,
             effectiveArea
             )
 
         # write the photon counts to a CSV file in the processed directory
         writePhotonCountsToCSV(
-            self.photonCountsPreBurst,
+            self.__photonCountsPreBurst,
             self.photonErrorsPreBurst,
             self.__processedDir / "photonCountsPreBurst.csv"
         )
         writePhotonCountsToCSV(
-            self.photonCounts,
+            self.__photonCounts,
             self.photonErrors,
             self.__processedDir / "photonCounts.csv"
         )
         writePhotonCountsToCSV(
-            self.photonCountsPostBurst,
+            self.__photonCountsPostBurst,
             self.photonErrorsPostBurst,
             self.__processedDir / "photonCountsPostBurst.csv"
         )

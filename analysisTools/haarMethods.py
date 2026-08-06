@@ -1146,7 +1146,7 @@ def haarPowerMod(
 
         # compute baseline statistical weights for regression
         weightedPowerSum: float = (
-            modeledLogSignalPower / fitInverseVarianceWeights
+            modeledLogSignalPower * fitInverseVarianceWeights
         ).sum()
         totalInverseVarianceWeight: float = float(fitInverseVarianceWeights.sum())
 
@@ -1331,7 +1331,8 @@ def haarPowerMod(
                 lowerModelPlotDomain,
                 lowerModelPlotDomain * MATHexp(meanReferenceBaseline / 2.0),
                 'r-',
-                alpha = 0.5
+                alpha = 0.5,
+                label = 'Fitted Power-Law Model'
             )
 
             # plot upper logarithmic power-law decay string path
@@ -1353,6 +1354,7 @@ def haarPowerMod(
             horizontalTimeErrors: np.ndarray = (
                 0.5 * (scaledUpperTimeBounds - scaledLowerTimeBounds)[validSignalMask]
             )
+
             plt.errorbar(
                 characteristicTimescales[validSignalMask],
                 transformedSignalPower,
@@ -1361,7 +1363,8 @@ def haarPowerMod(
                 fmt = 'bo',
                 capsize = 0,
                 linestyle = 'None',
-                markersize = 3
+                markersize = 3,
+                label = 'Signal Power Spectrum'
             )
 
             # background grid
@@ -1395,6 +1398,15 @@ def haarPowerMod(
                 np.nanmax(transformedSignalPower) * 1.5)
             )
 
+            import matplotlib.ticker as ticker
+
+
+            plt.xscale('log')
+            plt.yscale('log')
+
+            plt.gca().yaxis.set_major_locator(ticker.LogLocator(base=10.0, subs=(1.0,)))
+
+
             # labels
             signalToNoiseLabel: str = rf"$\Delta t_{{\rm snr}}=$ {peakSignalToNoiseRatio:.4f}"
             spectralSlopeLabel: str = rf"$t_{{\beta}}=$ {spectralIndexSlope:.4f}"
@@ -1411,17 +1423,24 @@ def haarPowerMod(
             plt.title(finalTimescaleLabel)
 
             # overlay baseline error ceiling arrows if present
-            if any(backgroundNoiseMask):
-                clampedBackgroundNoise: np.ndarray = signalPowerSpectrum[backgroundNoiseMask].clip(0.0)
-                backgroundUpperBounds: np.ndarray = np.sqrt(
-                    clampedBackgroundNoise
-                    + signalToNoiseRatioThreshold * differentialPowerUncertainty[backgroundNoiseMask]
-                )
-                plt.plot(
-                    characteristicTimescales[backgroundNoiseMask],
-                    backgroundUpperBounds,
-                    'bv'
-                )
+#            if any(backgroundNoiseMask):
+#                clampedBackgroundNoise: np.ndarray = signalPowerSpectrum[backgroundNoiseMask].clip(0.0)
+#                backgroundUpperBounds: np.ndarray = np.sqrt(
+#                    clampedBackgroundNoise
+#                    + signalToNoiseRatioThreshold * differentialPowerUncertainty[backgroundNoiseMask]
+#                )
+#                plt.plot(
+#                    characteristicTimescales[backgroundNoiseMask],
+#                    backgroundUpperBounds,
+#                    'bv',
+#                    label = 'Background Noise Upper Bound',
+#                )
+            plt.legend(
+                loc = 'lower right',
+                fontsize = 10
+            )
+
+            plt.tight_layout()
 
             # save plot and close figure
             plt.savefig(

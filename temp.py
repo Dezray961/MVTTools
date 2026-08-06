@@ -72,13 +72,15 @@ def csvReader(
 photonCounts, photonErrors = csvReader("/home/derekpinkett/coding/MVTTools/data/processed/GRB080319B")
 
 # denoise the photon counts
-photonCounts = haarDenoise(photonCounts, photonErrors)
+#photonCounts = haarDenoise(photonCounts, photonErrors)
 
 
 
 
 import matplotlib.pyplot as plt
 import matplotlib.offsetbox as offsetbox
+import numpy as np
+
 windowSizes = [1.0, 2.0, 4.0, 8.0, 16.0, 32.0]
 
 
@@ -86,10 +88,10 @@ fig, axs = plt.subplots(
     len(windowSizes)//2,
     len(windowSizes)//(len(windowSizes)//2),
     figsize=(10, 6),
-    layout='constrained',
     sharex=True
-    )
+)
 axs = axs.flatten()
+
 for i, windowSize in enumerate(windowSizes):
     results = timeResolvedMVT(
         photonCounts,
@@ -98,10 +100,9 @@ for i, windowSize in enumerate(windowSizes):
         timeWindowSizeSeconds = windowSize
     )
 
-    # extract the center times, MVT and MVT errors from the results
-    times: list = []
-    MVTs: list = []
-    MVTErrors: list = []
+    times = []
+    MVTs = []
+    MVTErrors = []
 
     for result in results:
         times.append(result['centerTimeSeconds'])
@@ -113,61 +114,72 @@ for i, windowSize in enumerate(windowSizes):
     MVTs = np.array(MVTs)
     MVTErrors = np.array(MVTErrors)
 
-    # clean up the results to remove any NaN values
-    valid_indices = ~np.isnan(MVTs)
-    validMVTs = MVTs[valid_indices]
-
+    # 1. FIX: Convert zeros, negatives, and infinities into NaNs to create gaps
+    invalid_indices = ~np.isfinite(MVTs) | (MVTs <= 0)
+    MVTs[invalid_indices] = np.nan
 
     ax = axs[i]
+    
+    # 2. Plot the array (Matplotlib will automatically leave gaps for the NaNs)
     ax.plot(
         times,
         MVTs,
         label='MVT',
         color='blue',
         linewidth=1.0
-        )
+    )
 
     at = offsetbox.AnchoredText(
         f'Window Size: {windowSize} s', 
-        loc='upper right',           # Placement inside the axes
-        frameon=True,                # Add a white background box
+        loc='upper right',           
+        frameon=True,                
         prop=dict(size=10)
     )
-    at.patch.set_boxstyle("round,pad=0.2")
-    at.patch.set_alpha(0.8)          # Slight transparency for overlapping data
-    ax.add_artist(at)
 
+    at.patch.set_boxstyle("round,pad=0.2")
+    at.patch.set_alpha(0.8)          
+    ax.add_artist(at)
     
-    if i < 4: 
-        ax.set_xticklabels([])
-    else:
+    # FIX: Remove the ax.set_xticklabels([]) manual override
+    if i >= 4: 
         ax.set_xlabel('Time [s]')
         
     if i % 2 != 0: 
         ax.yaxis.tick_right()
         ax.yaxis.set_label_position('right')
-        ax.set_ylabel('MVT [$m$s]')
-    else:
-        ax.set_ylabel('MVT [$m$s]')
-    ax.vlines(
+    
+    ax.set_ylabel('MVT [$m$s]')
+
+
+    ax.axvline(
         x=2,
-        ymin=np.min(validMVTs),
-        ymax=np.max(validMVTs),
         color='grey',
         linestyle='--',
         label='Trigger Time'
-        )
+    )
+
     ax.hlines(
         y=40,
-        xmin=np.min(times),
-        xmax=np.max(times),
+        xmin=np.nanmin(times),
+        xmax=np.nanmax(times),
         color='grey',
         linestyle='-',
         label='GB14 result'
-        )
-    ax.set_xlim(np.min(times), np.max(times))
-    ax.set_ylim(0, np.max(validMVTs) * 1.1)
+    )
+
+    # 3. FIX: Calculate limits safely ignoring the NaNs and factoring in the y=40 line
+    if i == 2:
+        ax.set_ylim(0, 600)
+    elif not np.all(np.isnan(MVTs)):
+        # nanmax ignores the NaN gaps so your limit stays true to the real data
+        max_data_val = np.nanmax(MVTs)
+        max_val = max(max_data_val, 40) 
+        ax.set_ylim(0, max_val * 1.1)
+    else:
+        ax.set_ylim(0, 600)
     print(f"Window Size: {windowSize} s, complete.")
+
+
 plt.subplots_adjust(wspace=0, hspace=0)
 axs[-1].legend(loc='upper left')
 plt.show()

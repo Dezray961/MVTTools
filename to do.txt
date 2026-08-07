@@ -9,13 +9,20 @@ swiftDataTools
 * Impliment logging
 * Impliment config.yaml in all tools ✅
 
+
+fermiDataTools
+* impliment Fermi GMB into the tool
+
+
 analysisTools
-* Time-resolved MVT from photon counts and errors
-* Fix the flux variation - delta t plot
-* Was GRB 080319B caught by Fermi?
+* Time-resolved MVT from photon counts and errors ✅
+* Fix the flux variation - delta t plot ✅
+* Was GRB 080319B caught by Fermi? - No ✅
 * time-resolved Epeak
+    Need to impliment Fermi first so comparisons and can be made between bursts that both caught.
 * something to compare them?
 
+* recreate the results from Simone's paper
 
 
 ✅

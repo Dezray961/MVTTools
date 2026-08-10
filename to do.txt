@@ -1,11 +1,11 @@
 swiftDataTools
 * Sort out the Swift pipe ✅
-* Post-burst response matrix
-    Is the post burst data even relevant?
-    If it is relevant then it needs a different response matrix.
 * Find out why CALDB and PERL are causing issues.
     Is this just my laptop or more general?
-* Move the initial setup for the swift data tools into a general initial setup script
+* Move the initial setup for the swift data tools into a general initial setup script ✅
+* Move initial setup functions from swiftBATCatalogueGRB to swiftBATInitialSetup.py
+* Move GRB catalogue into a class that can return all the important information for a GRB
+* Impliment this in existing files
 * Impliment logging
 * Impliment config.yaml in all tools ✅
 

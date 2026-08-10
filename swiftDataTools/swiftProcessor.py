@@ -8,7 +8,7 @@ TODO investigate this.
 from os import environ, makedirs
 from subprocess import run
 from heasoftpy import Config, bateconvert, batmaskwtevt, batbinevt
-from swiftDataTools.swiftBATCatalogueGRB import getObservationID, importData, getCoordinates, getStartStopTime
+from swiftDataTools.swiftBATCatalogueGRB import GRBData
 from swiftDataTools.swiftSpectralTools import SpectralProcessor
 from pathlib import Path
 from astropy.io import fits
@@ -19,14 +19,12 @@ class ProcessSwiftData:
     """Class to process Swift BAT data for a given GRB. This class handles the processing of Swift BAT data for a given GRB, including checking and applying gain correction, checking and applying mask weighting, extracting light curves for different time periods, and converting the light curve data into CSV files. It has the ability to process a custom time range, however this will require the user to change settings in the config.yaml file. """
     def __init__(
             self,
-            GRBName: str
+            grb: GRBData
             )-> None:
         """Constructor for `ProcessSwiftData` class. Runs a complete pipeline to convert data from Swift BAT raw data to a standardised CSV file. Requires the data to exist in `/data/reproc/{observationID}/bat/`
 
         Args:
-            GRBName (str): Name of the GRB to process
-            energyBins (str, optional): Range of energy bins to use. Should be a string in the format "min-max", with the units in keV. Defaults to "15-350" This is the maximum energy range of the BAT sensor, see the BAT Data Analysis Guide for more information. https://swift.gsfc.nasa.gov/analysis/bat_swguide_v6_3.pdf
-
+            grb (GRBData): The GRB data for which to process the data. This should be an instance of the `GRBData` class.
         Raises:
             EnvironmentError: if the HEADAS environment variable is not set. This is required for the HEASoft tools to function properly. The user should ensure that they have initialized HEASoft before running this code.
             FileNotFoundError: if the required data files are not found in the specified directory.
@@ -39,17 +37,11 @@ class ProcessSwiftData:
         # set the environment variables for HEASoft and CALDB
         self.__setENV()
 
-        self.GRBName = GRBName
+        self.GRBName = grb.name
         self.energyBins = config.preProcessingConfig.swiftBATConfig.download.energyRange
-        self.__data, _ = importData("swiftDataTools/summary_general.csv")
-        self.__triggerID: str = getObservationID(
-            GRBName,
-            self.__data,
-            isTrigID=False
-            )
-
-        # find the right ascension and declination of the GRB from the summary_general.csv file.
-        self.__rightAscension, self.__declination = getCoordinates(self.GRBName, self.__data)
+        self.__triggerID: str = grb.observationID
+        self.__rightAscension, self.__declination = grb.ra, grb.dec
+        self.__startTime, self.__stopTime, _ = grb.triggerTime, grb.stopTime, grb.t90Error
 
         # set up the paths to the data directories and files
         self.__setPaths()
@@ -370,12 +362,6 @@ class ProcessSwiftData:
             # apply the mask if it has not been applied.
             applyMask()
 
-        # get the start and stop times of the burst from the summary_general.csv file.
-        self.__startTime, self.__stopTime, _ = getStartStopTime(
-            self.GRBName,
-            self.__data
-        )
-
         # find the burst duration
         self.__burstDuration: float = self.__stopTime - self.__startTime
         print(f"Start time: {self.__startTime} seconds")
@@ -556,5 +542,7 @@ class ProcessSwiftData:
 
 
 if __name__ == "__main__":
-    GRBName: str = "GRB080319B"
-    data: ProcessSwiftData = ProcessSwiftData(GRBName)
+    from swiftDataTools.swiftBATCatalogueGRB import SwiftGRBCatalogue
+    catalogue: SwiftGRBCatalogue = SwiftGRBCatalogue("swiftDataTools/summary_general.csv")
+    GRB080319A = catalogue.getGRBData("GRB080319A")
+    data: ProcessSwiftData = ProcessSwiftData(GRB080319A)

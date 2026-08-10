@@ -2,6 +2,7 @@
 Tools for working with the Swift BAT GRB catalogue. Currently set up to use a "data" list of lists as
 a catalogue, but should really be modified to use a class instead.
 """
+from ast import Raise
 from pathlib import Path
 import pandas as pd
 
@@ -17,31 +18,32 @@ class GRBData:
     Attributes:
         name (str): The name of the GRB.
         triggerTime (float): The trigger time of the GRB.
+        stopTime (float): The stop time of the GRB.
         ra (float): The right ascension of the GRB.
         dec (float): The declination of the GRB.
         t90 (float): The T90 duration of the GRB.
         t90Error (float): The error in the T90 duration of the GRB.
+        observationID (str): The observation ID of the GRB.
     """
-
-    def __init__(
-            self,
-            name: str,
-            triggerTime: float,
-            ra: float,
-            dec: float,
-            t90: float,
-            t90Error: float
-            ) -> None:
-        self.name = name
-        self.triggerTime = triggerTime
-        self.ra = ra
-        self.dec = dec
-        self.t90 = t90
-        self.t90Error = t90Error
+    name: str
+    triggerTime: float
+    stopTime: float
+    ra: float
+    dec: float
+    t90: float
+    t90Error: float
+    observationID: str
 
 
     def __repr__(self) -> str:
-        return f"GRBData(name={self.name}, triggerTime={self.triggerTime}, ra={self.ra}, dec={self.dec}, t90={self.t90}, t90Error={self.t90Error})"
+        attributes = [
+            f"{key}={value!r}" 
+            for key, value in self.__dict__.items()
+        ]
+        
+        class_name = self.__class__.__name__
+        return f"{class_name}(\n{'\n'.join(attributes)}\n)"
+
 
 class SwiftGRBCatalogue:
     """
@@ -100,50 +102,6 @@ class SwiftGRBCatalogue:
         return data, columnNames
 
 
-    def _getCoordinates(
-            self,
-            GRBName: str
-            ) -> tuple[float, float]:
-        """
-        Gets the coordinates (RA, Dec) for a given GRB name from the data.
-
-        Args:
-            GRBName (str): The name of the GRB to get coordinates for.
-            data (list[list[str]]): The data containing the GRB information.
-
-        Returns:
-            tuple[float, float]: The RA and Dec for the given GRB name.
-        """
-        for row in self.data:
-            if row[0] == GRBName:
-                return float(row[4]), float(row[5])
-            
-
-    def _getStartStopTime(
-            self,
-            grbName: str
-            ) -> tuple[float, float, float]:
-        """Gets the start, stop and t90 times for a given GRB name
-
-        Args:
-            grbName (str): The name of the GRB to get the start and stop times for
-            data (list[list[str]]): The data containing the GRB information
-
-        Returns:
-            tuple[float, float, float]: The start, stop, and t90 times for the GRB
-        """
-        triggerTime: float = 0.0
-        t90Time: float = 0.0
-        t90Error: float = 0.0
-        for row in self.data:
-            if row[0] == grbName:
-                triggerTime = float(row[2])
-                t90Time = float(row[8])
-                t90Error = float(row[9])
-        stopTime: float = triggerTime + t90Time
-        return triggerTime, stopTime, t90Error
-
-
     def getGRBData(
             self,
             grbName: str
@@ -153,14 +111,55 @@ class SwiftGRBCatalogue:
 
         Args:
             grbName (str): The name of the GRB to get data for.
-        
+
         Returns:
             GRBData: An instance of the GRBData class containing the data for the given GRB name.
+
+        Raises:
+            ValueError: If the GRB name is not found in the catalogue or if the RA/Dec values are invalid.
         """
-        triggerTime, stopTime, t90Error = self._getStartStopTime(grbName)
-        ra, dec = self._getCoordinates(grbName)
-        t90 = stopTime - triggerTime
-        return GRBData(grbName, triggerTime, ra, dec, t90, t90Error)
+        def getLineForGRB(
+                GRBName: str
+                ) -> list[str]:
+            for row in self.data:
+                if row[0] == GRBName:
+                    return row
+            raise ValueError(f"GRB with name {GRBName} not found.")
+
+
+        def getStartStopTime(
+                row: list[str]
+                ) -> tuple[float, float, float]:
+            try:
+                triggerTime: float = float(row[2])
+                t90Time: float = float(row[8])
+                t90Error: float = float(row[9])
+                stopTime: float = triggerTime + t90Time
+                return triggerTime, stopTime, t90Error
+            except ValueError:
+                raise ValueError(f"Invalid time values for {row[0]}: triggerTime={row[2]}, t90Time={row[8]}, t90Error={row[9]}")
+
+
+        def getAngles(
+                row: list[str]
+                ) -> tuple[float, float]:
+            try:
+                ra: float = float(row[4])
+                dec: float = float(row[5])
+                return ra, dec
+            except ValueError:
+                raise ValueError(f"Invalid RA/Dec values for {row[0]}: RA={row[4]}, Dec={row[5]}")
+
+
+
+        instance: GRBData = GRBData()
+        instance.name = grbName
+        row = getLineForGRB(grbName)
+        instance.triggerTime, instance.stopTime, instance.t90Error = getStartStopTime(row)
+        instance.ra, instance.dec = getAngles(row)
+        instance.t90 = instance.stopTime - instance.triggerTime
+        instance.observationID = row[18]
+        return instance
 
 
 

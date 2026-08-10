@@ -1,3 +1,6 @@
+# TODO impliment the config file
+
+
 from heasoftpy import batbinevt, batdrmgen, Config
 from subprocess import run
 from os import environ, makedirs
@@ -41,8 +44,7 @@ class SpectralProcessor:
             outputDir (str, optional): The directory to output the results. Defaults to ".".
 
         Raises:
-            EnvironmentError: _description_
-            EnvironmentError: _description_
+            EnvironmentError: If the HEADAS or CALDB environment variables are not set correctly.
         """
         # initialise class variables
         self.__repoRoot = Path(__file__).resolve().parents[1]

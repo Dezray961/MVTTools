@@ -34,7 +34,7 @@ preProcessingConfig:
   # General settings
   general:
     downloadData: true # if true, downloads data from the source
-    deleteWhenDone: true # if true, deletes downloaded files after processing
+    deleteWhenDone: false # if true, deletes downloaded files after processing
 
   # ======================================================================================
   # 2.1 Swift BAT Configuration

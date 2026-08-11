@@ -14,8 +14,8 @@ generalSettings:
 
   # Logging settings
   logging:
-    silentMode: false # if true, suppresses console output
-    logLevel: "RESULTS" # log level to save to log file, options: "NONE", "CONSOLE", "RESULTS", "SIMPLE"
+    logToFile: true # if true, logs to file
+
 
   # system settings
   system:
@@ -107,3 +107,36 @@ mvtAnalysisConfig:
     timeWindowSize: 2.0 # time window size in seconds
     stepDurationSeconds: 0.1 # step duration in seconds for sliding window analysis
 
+
+
+# ==========================================================================================
+# 4. Logging Configuration
+# ==========================================================================================
+loggingConfigs:
+  version: 1
+  disable_existing_loggers: false
+
+  formatters:
+    simple:
+      format: "%(asctime)s [%(levelname)s] %(name)s: %(message)s"
+      datefmt: "%Y-%m-%d %H:%M:%S"
+
+  handlers:
+    console:
+      class: logging.StreamHandler
+      level: DEBUG
+      formatter: simple
+      stream: ext://sys.stdout
+
+    file:
+      class: logging.FileHandler
+      level: DEBUG
+      formatter: simple
+      filename: ""  # Placeholder: Python will overwrite this dynamically
+      mode: "a"     # 'w' starts a fresh file; change to 'a' to append
+
+  loggers:
+    "":
+      level: DEBUG
+      handlers: [console, file]  # Leave both default handlers active here
+      propagate: false

@@ -1,3 +1,8 @@
+"""
+Plots the time-resolved MVT for different window sizes using photon counts from a CSV file. 
+"""
+
+
 from pathlib import Path
 import importlib
 

@@ -21,8 +21,8 @@ analysisTools
 * time-resolved Epeak
     Need to impliment Fermi first so comparisons and can be made between bursts that both caught.
 * something to compare them?
+* get a better TRMVT - see Obsidian canvase
+* recreate the results from Simone's paper - needs Fermi
 
-* recreate the results from Simone's paper
-
-
+Add new results to the report and send it to Dave. BY MONDAY!!!!! ✅
 ✅

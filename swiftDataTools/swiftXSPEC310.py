@@ -1,9 +1,32 @@
-import os
-import csv
-import sys
-import xspec
+import os, csv, sys, logging, xspec
+
+def setupChildLogger()-> None:
+    """Sets up a logger for the child process."""
+    # read the logging configuration from the environment variable
+    environmentLogLevel: str = os.environ.get("LOGGING_LEVEL", "INFO").upper()
+
+    # convert the string level to a logging level, fallback to INFO if invalid
+    try:
+        if hasattr(logging, "getLevelNamesMapping"):
+            levelMapping: dict = logging.getLevelNamesMapping()
+        else:
+            levelMapping: dict = logging._nameToLevel
+
+        numericLevel: int = levelMapping.get(environmentLogLevel, logging.INFO)
+    except Exception:
+        numericLevel = logging.INFO
+
+    # configure the logger
+    logging.basicConfig(
+        level=numericLevel,
+        stream=sys.stdout,
+        format="%(levelname)s:%(message)s"
+    )
+
+logger = logging.getLogger(__name__)
 
 if __name__ == "__main__":
+    setupChildLogger()
     startRow = int(os.environ["START_ROW"])
     endRow = int(os.environ["END_ROW"])
     targetDir = os.environ["TARGET_DIR"]
@@ -18,7 +41,7 @@ if __name__ == "__main__":
     xspec.Fit.query = "yes"
 
     if not os.path.exists(phaFile) or not os.path.exists(rspFile):
-        print(f"CRITICAL: Files missing relative to root.", flush=True)
+        logger.critical("Files missing relative to root.")
         sys.exit(1)
 
     localRows = []
@@ -102,4 +125,4 @@ if __name__ == "__main__":
             dictWriter.writeheader()
             dictWriter.writerows(localRows)
             
-    print(f"BATCH_COMPLETE:{len(localRows)}", flush=True)
+    logger.info(f"BATCH_COMPLETE:{len(localRows)}")

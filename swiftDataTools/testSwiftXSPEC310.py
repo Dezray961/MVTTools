@@ -36,12 +36,13 @@ return to it after the Fermi GBM pipeis complete. Otherwise, you will have to pi
 """
 
 
-import os
-import time
-import csv
-import subprocess
+import os, time, csv, subprocess
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from tqdm import tqdm
+
+# logging
+import logging
+logger = logging.getLogger(__name__)
 
 # =====================================================================
 # GLOBAL CONFIGURATION 
@@ -57,6 +58,44 @@ START_ROW = 1
 END_ROW   = 227  
 # =====================================================================
 
+
+def processChildLogs(
+        process: subprocess.Popen,
+        parentLoggerName: str
+    ):
+    """Reads the stdout of a child process and logs it to the parent logger."""
+    logger = logging.getLogger(parentLoggerName)
+
+    # map the string to the logging level
+    logMapping = {
+        "INFO": logger.INFO,
+        "CRITICAL": logger.CRITICAL
+    }
+
+    # loop through the stdout of the child process
+    for line in process.stdout:
+        cleanLine = line.strip()
+        if cleanLine:
+            # extract the prefix (INFO, CRITICAL, etc.) and the message
+            parts = cleanLine.split(" ", 1)
+            prefix = parts[0]
+
+            # match the level tag to its logging level
+            if prefix in logMapping and len(parts) > 1:
+                logMessage = parts[1]
+                logMapping[prefix]("[Python 3.10] %s", logMessage)
+            else:
+                logger.info("[Python 3.10 RAW] %s", cleanLine)
+
+    # Ensure the child process has completed
+    process.wait()
+
+    if process.returncode == 0:
+        logger.info("Child process completed successfully.")
+    else:
+        logger.error("Child process exited with return code: %d", process.returncode)
+
+
 def runChunkWorker(start, end, targetFolder, pythonExecutable, outputDir, chunkIndex):
     """Spawns an isolated Python process writing to a private scratch file."""
     scratchCsv = os.path.join(outputDir, f"scratch_chunk_{chunkIndex}.csv")
@@ -68,6 +107,7 @@ def runChunkWorker(start, end, targetFolder, pythonExecutable, outputDir, chunkI
     localEnv["TARGET_DIR"] = targetFolder
     localEnv["OUTPUT_CSV"] = scratchCsv
     localEnv["PYTHONUNBUFFERED"] = "1"
+    localEnv["LOGGING_LEVEL"] = "INFO"
     
     command = [pythonExecutable, SCRIPT_310_PATH]
     
@@ -83,12 +123,14 @@ def runChunkWorker(start, end, targetFolder, pythonExecutable, outputDir, chunkI
                 if "BATCH_COMPLETE" in line:
                     slicesCount = int(line.split(":")[-1])
     except Exception:
-        pass
+        logger.error("An error occurred while processing the child process.")
         
     return slicesCount, scratchCsv
 
 if __name__ == "__main__":
-    print("=== Python 3.13 Master Pipeline: Chunked Type II Loader ===")
+    print(os.getcwd())
+    from loggerSetup import initialiseLogging
+    initialiseLogging()
     
     if not os.path.exists(OUTPUT_DIR):
         os.makedirs(OUTPUT_DIR)
@@ -111,7 +153,7 @@ if __name__ == "__main__":
         currentStart = currentEnd + 1
         idx += 1
 
-    print(f"Divided {totalRows} rows into {len(chunks)} parallel blocks across {maxWorkers} CPU cores...")
+    logger.info(f"Divided {totalRows} rows into {len(chunks)} parallel blocks across {maxWorkers} CPU cores...")
     
     startTime = time.time()
     scratchFiles = []
@@ -130,7 +172,7 @@ if __name__ == "__main__":
                     scratchFiles.append(scratchPath)
                 
     # --- COMBINE, SORT, AND CLEAN STEP ---
-    print("\nConsolidating and sorting worker scratch outputs...")
+    logger.info("\nConsolidating and sorting worker scratch outputs...")
     aggregatedData = []
     fieldnames = None
     
@@ -156,5 +198,5 @@ if __name__ == "__main__":
             writer.writerows(aggregatedData)
 
     elapsedTime = time.time() - startTime
-    print(f"Success! Exactly {len(aggregatedData)} rows ordered and compiled into: {finalCsvPath}")
-    print(f"Processing complete in {elapsedTime:.2f} seconds.")
+    logger.info(f"{len(aggregatedData)} rows ordered and compiled into: {finalCsvPath}")
+    logger.info(f"Processing complete in {elapsedTime:.2f} seconds.")

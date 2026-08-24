@@ -140,3 +140,9 @@ loggingConfigs:
       level: DEBUG
       handlers: [console, file]  # Leave both default handlers active here
       propagate: false
+
+    # Explicitly force matplotlib to only log warnings/errors
+    matplotlib:
+      level: WARNING
+      propagate: true  # Allows any valid warnings 
+

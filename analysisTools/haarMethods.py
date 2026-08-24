@@ -15,8 +15,9 @@ from os import cpu_count
 from loadConfig import config, getInitialBinSize
 
 
-# temp
+# logging
 import logging
+logger = logging.getLogger(__name__)
 
 
 
@@ -741,7 +742,6 @@ def haarPowerMod(
         shouldVerifyZeroBaseline: bool = False,
         scalingAdjustmentFactor: float = -1.0,
         signalToNoiseRatioThreshold: float = 3.0,
-        shouldPrintDiagnostics: bool = True,
         shouldApplyStatisticalWeight: bool = True,
         outputExportFilename: str = 'test',
         floatType = 'float64',
@@ -764,7 +764,6 @@ def haarPowerMod(
         shouldVerifyZeroBaseline (bool, optional): Whether to verify zero baseline. Defaults to False.
         scalingAdjustmentFactor (float, optional): The scaling adjustment factor. Defaults to -1.0.
         signalToNoiseRatioThreshold (float, optional): The signal-to-noise ratio threshold. Defaults to 3.0.
-        shouldPrintDiagnostics (bool, optional): Whether to print diagnostics. Defaults to True.
         shouldApplyStatisticalWeight (bool, optional): Whether to apply statistical weights. Defaults to True.
         outputExportFilename (str, optional): The filename for exporting output. Defaults to 'test'.
         floatType (str, optional): Data type for computations. Defaults to 'float64'.
@@ -883,8 +882,7 @@ def haarPowerMod(
         baselineNoisePowerSpectrum *= estimatedBackgroundScalingFactor
         differentialPowerUncertainty *= estimatedBackgroundScalingFactor
 
-        if (shouldPrintDiagnostics):
-            print(f" {outputExportFilename} a factor: {estimatedBackgroundScalingFactor}")
+        logger.debug(f" {outputExportFilename} a factor: {estimatedBackgroundScalingFactor}")
 
     # subtract background noise from the signal power spectrum
     signalPowerSpectrum -= baselineNoisePowerSpectrum
@@ -970,16 +968,14 @@ def haarPowerMod(
 
     # verify a baseline number of signal elements exist
     if np.count_nonzero(validSignalMask) < 2:
-        if shouldPrintDiagnostics:
-            print(f"{outputExportFilename} Not enough significant data!")
+        logger.debug(f"{outputExportFilename} Not enough significant data!")
     else:
         # filter out NaN or Inf values from the active data set
         cleanSignalMask: np.ndarray = validSignalMask & np.isfinite(signalPowerSpectrum)
 
         # guard against empty subsets after cleaning
         if np.count_nonzero(cleanSignalMask) < 2:
-            if shouldPrintDiagnostics:
-                print(f"{outputExportFilename} Not enough significant data after removing NaNs!")
+            logger.debug(f"{outputExportFilename} Not enough significant data after removing NaNs!")
             # exit the function gracefully if no valid data is left
             return (
                 peakSignalToNoiseRatio,
@@ -1457,13 +1453,12 @@ def haarPowerMod(
             minimumVariabilityTimescaleUncertainty = 0.0
 
     # print the final results if requested
-    if shouldPrintDiagnostics:
-        print(
-            f"{outputExportFilename} "
-            f"T_snr={peakSignalToNoiseRatio:f} "
-            f"T_beta={spectralIndexSlope:f} "
-            f"T_min={minimumVariabilityTimescale:f} +/- {minimumVariabilityTimescaleUncertainty:f}"
-        )
+    logger.debug(
+        f"{outputExportFilename} "
+        f"T_snr={peakSignalToNoiseRatio:f} "
+        f"T_beta={spectralIndexSlope:f} "
+        f"T_min={minimumVariabilityTimescale:f} +/- {minimumVariabilityTimescaleUncertainty:f}"
+    )
 
     # return the computed parameters as a tuple
     return (
@@ -1532,7 +1527,7 @@ def processSingleWindowWorker(
     except Exception as calculationException:
         minimumVariabilityTimescaleMs: float = np.nan
         minimumVariabilityTimescaleUncertaintyMs: float = np.nan
-        logging.warning(f"Error during MVT calculation for window at {windowCenterTimeSeconds}s: {calculationException}")
+        logger.warning(f"Error during MVT calculation for window at {windowCenterTimeSeconds}s: {calculationException}")
         
     # return an isolated dictionary
     return {
@@ -1595,7 +1590,7 @@ def timeResolvedMVT(
 
     # guard against window size exceeding the light curve length
     if windowDurationBins > len(counts):
-        print("Warning: Window size is larger than the light curve. No analysis performed.")
+        logger.warning("Window size is larger than the light curve. No analysis performed.")
         return []
     
     # initialise a list to hold the results for each window
@@ -1666,6 +1661,8 @@ def csvReader(
 
 
 if __name__ == "__main__":
+    from loggerSetup import initialiseLogging
+    initialiseLogging()
     # get the photon counts and errors from the CSV file
     photonCounts, photonErrors = csvReader("/home/derekpinkett/coding/MVTTools/data/processed/GRB080319B")
 
@@ -1676,26 +1673,3 @@ if __name__ == "__main__":
         shouldGeneratePlots=True,
         outputExportFilename="/home/derekpinkett/coding/MVTTools/plots/GRB080319B_haar_power_mod"
     )
-
-
-    from matplotlib import pyplot as plt
-
-
-    
-
-
-
-
-
-
-
-#    # calculate the time-resolved MVT using the photon counts and errors
-#    timeResolvedResults = timeResolvedMVT(
-#        photonCounts,
-#        photonErrors,
-#        source="swift"
-#    )
-#
-#    # extract the time-resolved MVT values
-#    timeResolvedMVTValues = [result['mvtMs'] for result in timeResolvedResults]
-#    print("Time-resolved MVT values (ms):", timeResolvedMVTValues)

@@ -6,7 +6,7 @@ swiftDataTools
 * Move initial setup functions from swiftBATCatalogueGRB to swiftBATInitialSetup.py ✅
 * Move GRB catalogue into a class that can return all the important information for a GRB ✅
 * Impliment this in existing files ✅
-* Impliment logging
+* Impliment logging ✅
 * Impliment config.yaml in all tools - missing swiftSpectralTools.py
 
 

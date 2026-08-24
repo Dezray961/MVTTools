@@ -53,7 +53,7 @@ def initialiseLogging():
         logDictionary = dict(config.loggingConfigs)
         
         # Check your custom config's boolean toggle property
-        if config.generalSettings.logToFile:
+        if config.generalSettings.logging.logToFile:
             # Generate a unique timestamped file path
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             logDirectory = pathlib.Path("logs")

@@ -13,6 +13,10 @@ from shellTools.runShell import ShellRunner
 from swiftDataTools.swiftBATCatalogueGRB import GRBData
 from contextlib import chdir
 
+# logging
+import logging
+logger = logging.getLogger(__name__)
+
 
 def downloadSwiftBATData(
         grb: GRBData
@@ -49,23 +53,25 @@ def processSwiftBATData(
     """
     # download the data using wget
     if config.preProcessingConfig.general.downloadData:
-        print(f"Downloading data for {grb.name}...")
+        logger.info(f"Downloading data for {grb.name}...")
         # download the data using the wget statement
         downloadSwiftBATData(grb)
-        print("Download complete.")
+        logger.info("Download complete.")
 
     # process the data using the HEASoft tools to generate light curves for the specified energy range and time bin size
     ProcessSwiftData(grb)
 
-    print("Processing complete.")
+    logger.info("Processing complete.")
 
     # delete the original data file if specified
     if config.preProcessingConfig.general.deleteWhenDone:
-        print(f"Deleting original data file for {grb.name}...")
+        logger.info(f"Deleting original data file for {grb.name}...")
         rmtree(f'data/reproc/{grb.observationID}')
-        print("Deletion complete.")
+        logger.info("Deletion complete.")
 
 if __name__ == "__main__":
+    from loggerSetup import initialiseLogging
+    initialiseLogging()
     from swiftDataTools.swiftBATCatalogueGRB import SwiftGRBCatalogue
     catalogue = SwiftGRBCatalogue("summary_general.csv")
     GRB080319B = catalogue.getGRBData("GRB080319B")

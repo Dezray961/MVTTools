@@ -1,4 +1,12 @@
 """
+Has the following logging levels:
+- DEBUG: logger.debug() - Detailed information
+- INFO: logger.info() - Confirmation that things are working as expected.
+- WARNING: logger.warning() - An indication that something unexpected happened.
+- ERROR: logger.error() - An indication that a more serious problem occurred.
+- CRITICAL: logger.critical() - An indication that a serious error occurred.
+
+
 Should be initalised at the top level of the main script so that all modules can use the same logging
 configuration, using:
 

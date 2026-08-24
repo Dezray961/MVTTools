@@ -73,7 +73,12 @@ def runChunkWorker(start, end, targetFolder, pythonExecutable, outputDir, chunkI
     
     slicesCount = 0
     try:
-        with subprocess.Popen(command, env=localEnv, stdout=subprocess.PIPE, text=True) as process:
+        with subprocess.Popen(
+            command,
+            env=localEnv,
+            stdout=subprocess.PIPE,
+            text=True
+            ) as process:
             for line in process.stdout:
                 if "BATCH_COMPLETE" in line:
                     slicesCount = int(line.split(":")[-1])

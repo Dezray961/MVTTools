@@ -7,6 +7,10 @@ from os import environ, makedirs
 from os.path import join
 from pathlib import Path
 
+# logging
+import logging
+logger = logging.getLogger(__name__)
+
 
 class SpectralProcessor:
     """
@@ -110,16 +114,16 @@ class SpectralProcessor:
             capture_output=True,
             text=True
         )
-        print(f"STDOUT Log:\n{output.stdout}")
+        logger.debug(f"STDOUT Log:\n{output.stdout}")
         if output.returncode != 0:
-            print(f"Command failed with code {output.returncode}!")
-            print(f"Error Log:\n{output.stderr}")
+            logger.error(f"Command failed with code {output.returncode}!")
+            logger.error(f"Error Log:\n{output.stderr}")
 
 
     def __generateSpectrum(
             self
         )-> None:
-        print("Generating spectrum for burst period")
+        logger.info("Generating spectrum for burst period")
         # generate the output filepath for the spectrum
         self.spectrumPath = self.__outputDir / "outputSpectrum.pha"
         # run batbinevt to create the spectrum for the burst period
@@ -137,9 +141,9 @@ class SpectralProcessor:
             snrthresh = self.__snrThreshold,
             clobber = "YES"
         )
-        print(output.stdout)
+        logger.debug(output.stdout)
 
-        print("Applying corrections to the spectrum")
+        logger.info("Applying corrections to the spectrum")
         # run batupdatephakw and batphasyserr to apply corrections to the spectrum currently this is
         # done using subprocess.run to run the commands in a bash shell. this is because the heasoftpy
         # wrapper for batupdatephakw is throwing errors about the  CALDB environment variable not being
@@ -163,7 +167,7 @@ class SpectralProcessor:
     def __generateResponseMatrix(
             self
         )-> None:
-        print("Generating response matrix for burst period")
+        logger.info("Generating response matrix for burst period")
         # generate the output filepath for the response matrix
         self.responseMatrixPath = self.__outputDir / "outputResponse.rsp"
         # run batdrmgen to create the response matrix for the burst period
@@ -173,12 +177,14 @@ class SpectralProcessor:
             hkfile = 'NONE',
             clobber = "YES"
         )
-        print(output.stdout)
+        logger.debug(output.stdout)
 
 
 if __name__ == "__main__":
     # test
     from swiftDataTools.swiftBATCatalogueGRB import getObservationID, importData, getStartStopTime
+    from loggerSetup import initialiseLogging
+    initialiseLogging()
 
     data, _ = importData('swiftDataTools/summary_general.csv')
     GRBName = "GRB080319B"

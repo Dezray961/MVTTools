@@ -5,6 +5,7 @@ from astropy.coordinates import SkyCoord
 from analysisTools.GRBData import GRBData
 from pathlib import Path
 import pandas as pd
+from astropy.table import Table
 
 warnings.simplefilter('ignore', category=UnitsWarning)
 
@@ -51,21 +52,22 @@ def getFermiGRBData(
     # find the position of the GRB on the sky
     positionOnSky: SkyCoord = SkyCoord.from_name(grbName)
     # query the Fermi GBM catalogue for the GRB data 
-    grbData: pd.DataFrame = Heasarc.query_region(
+    grbDataTable: pd.DataFrame = Heasarc.query_region(
         positionOnSky,
         catalog='fermigbrst'
-    ).to_pandas() #(can return multiple entries if more than one GRB is found at the same position)
+    ) #(can return multiple entries if more than one GRB is found at the same position)
+    grbDataFrame: pd.DataFrame = grbDataTable.to_pandas()
 
-    numberOfEntries: int = len(grbData)
+    numberOfEntries: int = len(grbDataFrame)
     match numberOfEntries:
         case 0: # if no entries are found, raise an error
             raise ValueError(f"No GRB data found for {grbName}.")
         case 1: # if one entry is found, return the data as a GRBData instance
-            grbDataRow: pd.Series = grbData.iloc[0]
+            grbDataRow: pd.Series = grbDataFrame.iloc[0]
         case _: # if multiple entries are found, select the one with the same name
             # there are two formats: GRBYYMMDD[A-Z] and GRBYYMMDD###
             cleanInputName: str = grbName[3:9]
-            matchingEntries: pd.DataFrame = grbData[grbData['name'].str[3:9] == cleanInputName]
+            matchingEntries: pd.DataFrame = grbDataFrame[grbDataFrame['name'].str[3:9] == cleanInputName]
 
             if matchingEntries.empty:
                 raise ValueError(f"No matching GRB data found for {grbName}.")
@@ -85,6 +87,7 @@ def getFermiGRBData(
     instance.t90Error = float(grbDataRow['t90_error'])
     instance.observationID = grbDataRow['name']
     instance.source = "Fermi GBM"
+    instance.table = grbDataTable[grbDataTable['name'] == grbDataRow['name']]
 
     return instance
 
@@ -92,4 +95,3 @@ def getFermiGRBData(
 if __name__ == "__main__":
     testGRBData = getFermiGRBData("GRB230307A")
     print(testGRBData)
-

@@ -22,6 +22,7 @@ class GRBData:
     t90: float
     t90Error: float
     observationID: str
+    source: str
 
 
     def __repr__(self) -> str:

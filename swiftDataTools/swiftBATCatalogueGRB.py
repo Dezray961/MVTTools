@@ -124,6 +124,7 @@ class SwiftGRBCatalogue:
         instance.ra, instance.dec = getAngles(row)
         instance.t90 = instance.stopTime - instance.triggerTime
         instance.observationID = row[18]
+        instance.source = "Swift BAT"
         return instance
 
 

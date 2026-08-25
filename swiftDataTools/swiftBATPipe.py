@@ -10,7 +10,7 @@ from swiftDataTools.swiftProcessor import ProcessSwiftData
 from shutil import rmtree
 from loadConfig import config
 from shellTools.runShell import ShellRunner
-from swiftDataTools.swiftBATCatalogueGRB import GRBData
+from analysisTools.GRBData import GRBData
 from contextlib import chdir
 
 # logging

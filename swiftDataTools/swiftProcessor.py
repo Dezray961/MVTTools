@@ -8,7 +8,7 @@ TODO investigate this.
 from os import environ, makedirs
 from subprocess import run
 from heasoftpy import Config, bateconvert, batmaskwtevt, batbinevt
-from swiftDataTools.swiftBATCatalogueGRB import GRBData
+from analysisTools.GRBData import GRBData
 from swiftDataTools.swiftSpectralTools import SpectralProcessor
 from pathlib import Path
 from astropy.io import fits

@@ -12,12 +12,15 @@ from scipy.optimize import minimize_scalar
 from warnings import filterwarnings
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from os import cpu_count
-from loadConfig import config, getInitialBinSize
+from loadConfig import getInitialBinSize
 
-
-# logging
+# standard logging/configuration setup
+from loadConfig import config
 import logging
 logger = logging.getLogger(__name__)
+if __name__ == "__main__":
+    from loggerSetup import initialiseLogging
+    initialiseLogging()
 
 
 
@@ -1661,8 +1664,6 @@ def csvReader(
 
 
 if __name__ == "__main__":
-    from loggerSetup import initialiseLogging
-    initialiseLogging()
     # get the photon counts and errors from the CSV file
     photonCounts, photonErrors = csvReader("/home/derekpinkett/coding/MVTTools/data/processed/GRB080319B")
 

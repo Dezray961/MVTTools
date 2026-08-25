@@ -7,9 +7,14 @@ from os import environ, makedirs
 from os.path import join
 from pathlib import Path
 
-# logging
+# standard logging/configuration setup
+from loadConfig import config
 import logging
 logger = logging.getLogger(__name__)
+if __name__ == "__main__":
+    from loggerSetup import initialiseLogging
+    initialiseLogging()
+
 
 
 class SpectralProcessor:
@@ -183,8 +188,7 @@ class SpectralProcessor:
 if __name__ == "__main__":
     # test
     from swiftDataTools.swiftBATCatalogueGRB import getObservationID, importData, getStartStopTime
-    from loggerSetup import initialiseLogging
-    initialiseLogging()
+
 
     data, _ = importData('swiftDataTools/summary_general.csv')
     GRBName = "GRB080319B"

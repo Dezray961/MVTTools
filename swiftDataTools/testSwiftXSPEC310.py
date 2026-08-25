@@ -40,9 +40,14 @@ import os, time, csv, subprocess
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from tqdm import tqdm
 
-# logging
+# standard logging/configuration setup
+from loadConfig import config
 import logging
 logger = logging.getLogger(__name__)
+if __name__ == "__main__":
+    from loggerSetup import initialiseLogging
+    initialiseLogging()
+
 
 # =====================================================================
 # GLOBAL CONFIGURATION 
@@ -128,10 +133,6 @@ def runChunkWorker(start, end, targetFolder, pythonExecutable, outputDir, chunkI
     return slicesCount, scratchCsv
 
 if __name__ == "__main__":
-    print(os.getcwd())
-    from loggerSetup import initialiseLogging
-    initialiseLogging()
-    
     if not os.path.exists(OUTPUT_DIR):
         os.makedirs(OUTPUT_DIR)
         

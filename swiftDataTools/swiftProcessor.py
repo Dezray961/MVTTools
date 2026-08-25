@@ -13,11 +13,16 @@ from swiftDataTools.swiftSpectralTools import SpectralProcessor
 from pathlib import Path
 from astropy.io import fits
 import numpy as np
-from loadConfig import config
 
-# logging
+
+# standard logging/configuration setup
+from loadConfig import config
 import logging
 logger = logging.getLogger(__name__)
+if __name__ == "__main__":
+    from loggerSetup import initialiseLogging
+    initialiseLogging()
+
 
 
 class ProcessSwiftData:
@@ -547,9 +552,6 @@ class ProcessSwiftData:
 
 
 if __name__ == "__main__":
-    from loggerSetup import initialiseLogging
-    initialiseLogging()
-
     from swiftDataTools.swiftBATCatalogueGRB import SwiftGRBCatalogue
     catalogue: SwiftGRBCatalogue = SwiftGRBCatalogue("swiftDataTools/summary_general.csv")
     GRB080319A = catalogue.getGRBData("GRB080319A")

@@ -8,14 +8,18 @@ Complete pipe for processing Swift BAT data for a given GRB name. Steps:
 
 from swiftDataTools.swiftProcessor import ProcessSwiftData
 from shutil import rmtree
-from loadConfig import config
 from shellTools.runShell import ShellRunner
 from analysisTools.GRBData import GRBData
 from contextlib import chdir
 
-# logging
+# standard logging/configuration setup
+from loadConfig import config
 import logging
 logger = logging.getLogger(__name__)
+if __name__ == "__main__":
+    from loggerSetup import initialiseLogging
+    initialiseLogging()
+
 
 
 def downloadSwiftBATData(
@@ -70,8 +74,6 @@ def processSwiftBATData(
         logger.info("Deletion complete.")
 
 if __name__ == "__main__":
-    from loggerSetup import initialiseLogging
-    initialiseLogging()
     from swiftDataTools.swiftBATCatalogueGRB import SwiftGRBCatalogue
     catalogue = SwiftGRBCatalogue("summary_general.csv")
     GRB080319B = catalogue.getGRBData("GRB080319B")

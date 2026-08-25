@@ -11,7 +11,25 @@ swiftDataTools
 
 
 fermiDataTools
+* install fermitools ✅ 
 * impliment Fermi GMB into the tool
+    * burst catalogue ✅
+    * dataFetcher
+    * lightcurve generation
+        * initial bin into 64ms
+        * lightcurve generation loop
+            * find optimal sensor combination
+                * add all combinations of sensors together
+                * calculate the SNR of each combination
+                * choose the combination with the highest SNR
+            * Generate the lightcurve from the TTE optimal detector combination
+            * calculate the MVT calculating the uncertianty using MC (300 realisations)
+            * rebin using MVT as bin width
+            * repeat until SNR converges
+        * bin data into 0.1ms bins using the found optimal dectector combination
+        * generate final light curve
+    * calculate the (TR)MVT
+
 
 
 analysisTools

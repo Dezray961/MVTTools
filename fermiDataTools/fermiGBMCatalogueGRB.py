@@ -10,6 +10,15 @@ from astropy.table import Table
 warnings.simplefilter('ignore', category=UnitsWarning)
 
 
+# standard logging/configuration setup
+from loadConfig import config
+import logging
+logger = logging.getLogger(__name__)
+if __name__ == "__main__":
+    from loggerSetup import initialiseLogging
+    initialiseLogging()
+
+
 REPO_ROOT = Path(__file__).resolve().parents[1]
 GRB_CATALOGUE_DIR = REPO_ROOT / "data" / "GRBCatalogue"
 
@@ -85,13 +94,18 @@ def getFermiGRBData(
     instance.dec = float(grbDataRow['dec'])
     instance.t90 = float(grbDataRow['t90'])
     instance.t90Error = float(grbDataRow['t90_error'])
-    instance.observationID = grbDataRow['name']
+    instance.observationID = grbDataRow['name'][3:]
     instance.source = "Fermi GBM"
     instance.table = grbDataTable[grbDataTable['name'] == grbDataRow['name']]
+    instance.folderPath = f"{config.generalSettings.directories.dataPath}/fermiGBM/{grbName}"
+
+    logger.info(f"Retrieved Fermi GBM data for {grbName}.")
 
     return instance
 
 
+
 if __name__ == "__main__":
+    logger.info("Starting Fermi GBM catalogue query.")
     testGRBData = getFermiGRBData("GRB230307A")
     print(testGRBData)

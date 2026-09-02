@@ -28,16 +28,14 @@ def downloadFermiGBMData(
         grb.table,
         'fermigbrst'
     )
-    # generate the folder path to download the data into
-    folderPath: str = f"{config.generalSettings.directories.dataPath}/fermiGBM/{grb.name}"
     # if the folder path does not exist, create it
-    if not Path(folderPath).exists():
-        Path(folderPath).mkdir(parents=True, exist_ok=True)
+    if not Path(grb.folderPath).exists():
+        Path(grb.folderPath).mkdir(parents=True, exist_ok=True)
     # download the data files into the folder path
     Heasarc.download_data(
         linksTable,
         host = 'heasarc',
-        location = folderPath
+        location = grb.folderPath
     )
 
 
@@ -65,7 +63,7 @@ def processFermiGBMData(
     # delete the original data file if specified
     if config.preProcessingConfig.general.deleteWhenDone:
         logger.info(f"Deleting original data for {grb.name}...")
-        rmtree(f"{config.generalSettings.directories.dataPath}/fermiGBM/{grb.name}")
+        rmtree(grb.folderPath)
         logger.info("Deletion complete.")
 
 

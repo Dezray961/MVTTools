@@ -64,7 +64,8 @@ preProcessingConfig:
       energyRange: "8-1000" # energy range
     # Processing settings
     processing:
-      initialBinSize: 100e-6 # initial bin size
+      initialBinSize: 64e-3 # initial bin size
+      maxDetectorCombinations: 3 # maximum number of detector combinations to use for analysis HIGH MEMORY USAGE!
 
   # ======================================================================================
   # 2.3 SVOM Configuration

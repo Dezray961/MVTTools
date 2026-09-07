@@ -43,4 +43,10 @@ analysisTools
 * recreate the results from Simone's paper - needs Fermi
 
 Add new results to the report and send it to Dave. BY MONDAY!!!!! ✅
+
+
+Get ready for hand off
+    * Type up how existing code works
+
+
 ✅

@@ -4,15 +4,12 @@ This will NOT run on a laptop due to the large memory requirements of the Fermi 
 
 
 from analysisTools.GRBData import GRBData
-from gdt.core.plot.lightcurve import Lightcurve
 from gdt.core.binning.unbinned import bin_by_edges as binByEdges
 from gdt.missions.fermi.gbm.tte import GbmTte
 from gdt.core.phaii import Phaii
 from gdt.core.background.fitter import BackgroundFitter
 from gdt.core.background.binned import Polynomial
-from gdt.core.background.primitives import BackgroundRates
-import numpy as np
-import gc
+import numpy as np, gc, os, pandas as pd
 from more_itertools import distinct_combinations as combinations
 from analysisTools.haarMethods import haarPowerMod
 
@@ -59,18 +56,12 @@ class ProcessFermiData:
 
         # find the optimal detector combination for the GRB
         self._generateDetectorCombinations()
-        optimalDetectorCombination: tuple[str] = self._findOptimalDetectorCombination()
-        logger.debug(f"Optimal detector combination: {optimalDetectorCombination}")
+        self._optimalDetectorCombination: tuple[str] = self._findOptimalDetectorCombination()
+        logger.debug(f"Optimal detector combination: {self._optimalDetectorCombination}")
 
-
-#        for detector, data in self._detectorData.items():
-#            logger.debug(f"Detector: {detector}, Counts: {data['counts']}, Background CPS: {data['backgroundCPS']}, Bin Width: {data['binWidth']}")
-
-
-        # bin to 100 μs
-
-
-        # create a CSV file with the binned photon counts
+        # bin to 100 μs and export to CSV
+        self._outputFilePath: str = self._exportOptimalDataToCSV(self._optimalDetectorCombination)
+        logger.info(f"Exported binned photon counts to: {self._outputFilePath}")
 
 
     def _readInTTEData(
@@ -89,7 +80,7 @@ class ProcessFermiData:
             detector: str
         ) -> dict:
         """
-        Retrieves raw event timestamps within energy bounds and fits a continuous background model. Discards heavy objects to allow fast custom rebinning later.
+        Retrieves raw event timestamps within energy bounds and fits a continuous background model. Discards heavy objects to free up memory.
 
         Args:
             detector (str): The name of the detector to process e.g. 'n0', 'n1', 'n2', etc.
@@ -108,27 +99,30 @@ class ProcessFermiData:
         tteDataFiltered = tteData.slice_energy(self._energyRange)
 
         # extract the raw event arrival times (unbinned)
-        extractedRawTimes: np.ndarray = np.array(tteDataFiltered.data.time)
+        extractedRawTimes: np.ndarray = np.array(tteDataFiltered.data.times)
 
         # create a coarse time grid for background fitting
         coarseStartTime: float = self._timeRange[0]
         coarseEndTime: float = self._timeRange[1]
         coarseGrid: np.ndarray = np.arange(coarseStartTime, coarseEndTime + self._binSize, self._binSize)
 
-        logger.debug(f"Binning coarse temporary data for background fit on detector {detector}")
-        tempPhaii: Phaii = tteDataFiltered.to_phaii(
+        logger.debug(f"Binning temporary data for background fit on detector {detector}")
+        tempPhaii: Phaii = tteData.to_phaii(
             binByEdges,
             coarseGrid,
             time_range=self._timeRange
         )
 
         # fit the background model to the temporary coarse structure
-        logger.debug(f"Fitting continuous background model for detector {detector}")
+        logger.debug(f"Fitting polynomial background model for detector {detector}")
         fitter = BackgroundFitter.from_phaii(tempPhaii, Polynomial) 
         fitter.fit(order=1) 
 
         # interpolate the fitted background model to create a continuous background model
-        continuousBackgroundModel = fitter.interpolate()
+        continuousBackgroundModel = fitter.interpolate_bins(
+            tempPhaii.data.tstart,
+            tempPhaii.data.tstop
+        )
 
         # clear all references and wipe the heavy objects from RAM
         logger.debug(f"Purging GDT tracking structures from RAM for detector {detector}")
@@ -187,13 +181,29 @@ class ProcessFermiData:
 
         # loop across all targeted detectors
         for detector in detectorCombination:
-            detectorData:  = self._detectorData[detector]
-            detectorCounts, _ = np.histogram(detectorData["rawTimes"], bins=binEdges)
+            detectorPayload = self._detectorData[detector]
+
+            # bin the raw event timestamps into the current iteration bin size
+            detectorCounts, _ = np.histogram(detectorPayload["rawTimes"], bins=binEdges)
             combinedCounts += detectorCounts
-            # re-calculate individual variance contribution (Poisson variance = counts)
+
+            # re-calculate individual variance
             combinedVariance += detectorCounts
-            # continuous background model rates (CPS)
-            detectorRates: np.ndarray = detectorData["backgroundModel"].rate(binCenters)
+
+            # get the coarse time midpoints
+            coarseRatesObj = detectorPayload["backgroundModel"]
+            
+            # integrate over the specific energy window to isolate the correct channels
+            lowEnergyCut, highEnergyCut = self._energyRange
+            bkgdLightcurve = coarseRatesObj.integrate_energy(lowEnergyCut, highEnergyCut)
+            
+            # compute time midpoints
+            coarseBinCenters = (bkgdLightcurve.tstart + bkgdLightcurve.tstop) / 2.0
+            coarseRates = np.array(bkgdLightcurve.rates).flatten()
+
+            # map the energy-matched background rates to the current binCenters
+            detectorRates: np.ndarray = np.interp(binCenters, coarseBinCenters, coarseRates)
+            
             # convert rates to expected counts
             combinedBackgroundCounts += (detectorRates * binWidths)
 
@@ -254,7 +264,7 @@ class ProcessFermiData:
             return calculatedSNR, peakCounts, expectedBackgroundInPeakBin, averageBackgroundCPS, countsArray, countUncertainties
 
         except Exception as errorTrace:
-            logger.error(f"An error occurred during final SNR calculation for detector combination {detectorCombination}: {errorTrace}")
+            logger.error(f"An error occurred during the SNR calculation for detector combination {detectorCombination}: {errorTrace}")
             return 0.0, 0.0, 0.0, 0.0, np.array([]), np.array([])
 
 
@@ -315,8 +325,7 @@ class ProcessFermiData:
             self
         ) -> tuple[str, ...]:
         """
-        Finds the optimal detector combination for the GRB based on the highest peak SNR.
-        Converges the bin size using the Minimum Variability Timescale (MVT) completely in memory.
+        Finds the optimal detector combination for the GRB based on the highest peak SNR. Converges the bin size using the Minimum Variability Timescale (MVT). If the maxDetectorCombinations setting in the config file is large this can take a long time and require a lot of memory.
 
         Returns:
             tuple[str, ...]: The optimal detector combination.
@@ -326,16 +335,13 @@ class ProcessFermiData:
         loopCounter: int = 0
         maxIterations: int = 15  # Safety threshold to prevent infinite loops
 
-        # --- ONE-TIME FILE INITIALISATION ---
-        # Read the raw files EXACTLY ONCE at the start. This builds your raw timestamps 
-        # and continuous background model cache inside self._detectorData.
+        # read the raw files 
         logger.info(f"Initialising raw data cache and background models for GRB {self._grb.name}...")
         self._readInTTEData() 
 
         while loopCounter < maxIterations:
             loopCounter += 1
             
-            # This now executes in milliseconds because everything is processed via in-memory math
             (bestDetectorCombination, 
             bestSNR, _, _, _, 
             countsArray, 
@@ -344,35 +350,97 @@ class ProcessFermiData:
             snrDifference: float = abs(bestSNR - currentSNRValue)
             logger.debug(f"Iteration {loopCounter} - Best SNR: {bestSNR} for combo: {bestDetectorCombination} with difference: {snrDifference}")
             
-            # Check for mathematical convergence
+            # check for convergence
             if round(snrDifference, 3) < 0.001:
-                logger.info(f"🎉 Converged successfully after {loopCounter} passes! SNR: {bestSNR} for combination: {bestDetectorCombination}")
+                logger.info(f"Converged after {loopCounter} passes.")
+                logger.info(f"Final SNR: {bestSNR} for combination: {bestDetectorCombination}")
                 return bestDetectorCombination
             
-            # Update state values for the next convergence evaluation step
+            # update state values
             currentSNRValue = bestSNR
             currentDetectorCombination = bestDetectorCombination
             logger.debug(f"Current state set - SNR: {currentSNRValue} for combo: {currentDetectorCombination}")
 
-            # Find the MVT for the GRB using the winner of this pass
-            # Note: Confirm that HaarPowerMod accepts your flat NumPy variance arrays directly.
+            # find the MVT
             minimumVariabilityTimescale = haarPowerMod(
                 countsArray,
                 countUncertainties
-            )[3]
+            )[2]
             logger.debug(f"Calculated MVT: {minimumVariabilityTimescale} for detector combination: {currentDetectorCombination}")
-            
-            # Set the class variable bin size to the new MVT width
+            # check for invalid or zero timescale and return the current best guess if so
+            if minimumVariabilityTimescale <= 0.0:
+                fallbackResolution: float =  100e-6 # fallback to the instrument resolution
+                logger.warning(f"haarPowerMod returned an invalid or zero timescale ({minimumVariabilityTimescale}). Applying fallback resolution floor: {fallbackResolution}")
+                logger.info(f"Final SNR: {currentSNRValue} for combination: {currentDetectorCombination}")
+                return currentDetectorCombination
+
+            # set the bin size to the new MVT width
             self._binSize = minimumVariabilityTimescale
-            logger.debug(f"Setting class active bin size to MVT: {minimumVariabilityTimescale}")
+            logger.debug(f"Setting bin size to MVT: {minimumVariabilityTimescale}")
 
-            # --- THE SPEED FIX ---
-            # DO NOT call self._readInTTEData() here! 
-            # Because _combineDetectorData reads self._binSize dynamically on every loop execution,
-            # np.histogram will automatically re-slice the cached data at this new resolution next pass.
-
-        logger.warning(f"Reached maximum iteration limit ({maxIterations}) without perfect convergence. Returning best guess.")
+        logger.warning(f"Reached maximum iteration limit ({maxIterations}) without convergence. Returning best guess.")
+        logger.info(f"Final SNR: {currentSNRValue} for combination: {currentDetectorCombination}")
         return currentDetectorCombination
+
+
+    def _exportOptimalDataToCSV(
+            self,
+            optimalCombination: tuple[str, ...]
+        ) -> str:
+        """
+        Takes the optimal detector combination, bins the raw timestamps to 100 microseconds, and saves the count and error arrays to a CSV file.
+        
+        Args:
+            optimalCombination (tuple[str, ...]): The detector sequence to export e.g. ('n0', 'n1', 'n2').
+            outputFileName (str): The filename for the exported CSV.
+            
+        Returns:
+            str: Path to the generated output file.
+        """
+        import os
+        import pandas as pd
+
+        logger.info(f"Exporting data for combination {optimalCombination} at 100 microseconds resolution...")
+
+        outputFileName: str = "photonCounts.csv"
+
+        fixedBinSize: float = 0.0001
+        startTime: float = self._timeRange[0]
+        endTime: float = self._timeRange[1]
+        
+        binEdges: np.ndarray = np.arange(startTime, endTime + fixedBinSize, fixedBinSize)
+        
+        totalBins: int = len(binEdges) - 1
+        combinedCounts = np.zeros(totalBins, dtype=float)
+
+        for detector in optimalCombination:
+            detectorPayload = self._detectorData[detector]
+            
+            detectorCounts, _ = np.histogram(detectorPayload["rawTimes"], bins=binEdges)
+            combinedCounts += detectorCounts
+
+        combinedErrors: np.ndarray = np.sqrt(combinedCounts)
+
+        dataFrame = pd.DataFrame({
+            "counts": combinedCounts,
+            "errors": combinedErrors
+        })
+
+        outputPath = os.path.join(
+            config.generalSettings.directories.processedDataPath,
+            self._grb.name,
+            outputFileName
+        )
+
+        parentDirectory = os.path.dirname(outputPath)
+        os.makedirs(parentDirectory, exist_ok=True)
+        
+
+        dataFrame.to_csv(outputPath, index=False, header=False)
+        logger.info(f"Successfully generated binned output at: {outputPath}")
+
+
+        return outputPath
 
 
 

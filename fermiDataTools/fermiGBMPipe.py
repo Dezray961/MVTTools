@@ -5,6 +5,7 @@ from astropy.table import Table
 from loadConfig import config
 from shutil import rmtree
 from pathlib import Path
+from fermiDataTools.fermiGRBObservation import ProcessFermiData
 
 # standard logging/configuration setup
 from loadConfig import config
@@ -40,13 +41,15 @@ def downloadFermiGBMData(
 
 
 def processFermiGBMData(
-        grb: GRBData
+        grb: GRBData,
+        timeRange: tuple[float, float] = [-10, 10]
     ) -> None:
     """
     Processes the data for a given GRB name into a usable format for analysis. This includes downloading the data from the Fermi GBM archive, unzipping the data if it is compressed, and using the HEASoft tools to process the data into light curves for different energy ranges.
 
     Args:
         grb (GRBData): The GRB data for which to process the data.
+        timeRange (tuple[float, float]): The time range for the data processing.
     """
     # download the data using wget
     if config.preProcessingConfig.general.downloadData:
@@ -57,7 +60,10 @@ def processFermiGBMData(
 
     # process the data
     logger.info(f"Processing data for {grb.name}...")
-    # ... (processing logic here)
+    processFermiData = ProcessFermiData(
+        grb,
+        timeRange=timeRange
+        )
     logger.info("Processing complete.")
 
     # delete the original data file if specified
@@ -66,7 +72,10 @@ def processFermiGBMData(
         rmtree(grb.folderPath)
         logger.info("Deletion complete.")
 
+    # return the path to the output file
+    return processFermiData.outputFilePath
+
 
 if __name__ == "__main__":
     testGRBData = getFermiGRBData("GRB230307A")
-    processFermiGBMData(testGRBData)
+    print(processFermiGBMData(testGRBData))

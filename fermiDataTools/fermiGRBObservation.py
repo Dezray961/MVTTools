@@ -11,7 +11,7 @@ from gdt.core.background.fitter import BackgroundFitter
 from gdt.core.background.binned import Polynomial
 import numpy as np, gc, os, pandas as pd
 from more_itertools import distinct_combinations as combinations
-from analysisTools.haarMethods import haarPowerMod
+from analysisTools.haarMethods import estimateMvtUncertainty, haarPowerMod
 
 
 # standard logging/configuration setup
@@ -60,8 +60,8 @@ class ProcessFermiData:
         logger.debug(f"Optimal detector combination: {self._optimalDetectorCombination}")
 
         # bin to 100 μs and export to CSV
-        self._outputFilePath: str = self._exportOptimalDataToCSV(self._optimalDetectorCombination)
-        logger.info(f"Exported binned photon counts to: {self._outputFilePath}")
+        self.outputFilePath: str = self._exportOptimalDataToCSV(self._optimalDetectorCombination)
+        logger.info(f"Exported binned photon counts to: {self.outputFilePath}")
 
 
     def _readInTTEData(
@@ -362,10 +362,12 @@ class ProcessFermiData:
             logger.debug(f"Current state set - SNR: {currentSNRValue} for combo: {currentDetectorCombination}")
 
             # find the MVT
-            minimumVariabilityTimescale = haarPowerMod(
+            minimumVariabilityTimescale, minimumVariabilityTimescaleUncertainty, _ = estimateMvtUncertainty(
                 countsArray,
-                countUncertainties
-            )[2]
+                countUncertainties,
+                haarPowerMod,
+                nRealisations = config.mvtAnalysisConfig.numberOfRealisations
+            )
             logger.debug(f"Calculated MVT: {minimumVariabilityTimescale} for detector combination: {currentDetectorCombination}")
             # check for invalid or zero timescale and return the current best guess if so
             if minimumVariabilityTimescale <= 0.0:
@@ -444,7 +446,7 @@ class ProcessFermiData:
 
 
 
-
-from fermiDataTools.fermiGBMCatalogueGRB import getFermiGRBData
-testGRBData = getFermiGRBData("GRB230307A")
-testProcessFermiData = ProcessFermiData(testGRBData)
+if __name__ == "__main__":
+    from fermiDataTools.fermiGBMCatalogueGRB import getFermiGRBData
+    testGRBData = getFermiGRBData("GRB230307A")
+    testProcessFermiData = ProcessFermiData(testGRBData)

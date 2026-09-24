@@ -13,6 +13,7 @@ from warnings import filterwarnings
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from os import cpu_count
 from loadConfig import getInitialBinSize
+from tqdm import tqdm
 
 # standard logging/configuration setup
 from loadConfig import config
@@ -885,7 +886,8 @@ def haarPowerMod(
         baselineNoisePowerSpectrum *= estimatedBackgroundScalingFactor
         differentialPowerUncertainty *= estimatedBackgroundScalingFactor
 
-        logger.debug(f" {outputExportFilename} a factor: {estimatedBackgroundScalingFactor}")
+#        commmented out for now, as later code calls this hundreds of times.
+#        logger.debug(f" {outputExportFilename} a factor: {estimatedBackgroundScalingFactor}")
 
     # subtract background noise from the signal power spectrum
     signalPowerSpectrum -= baselineNoisePowerSpectrum
@@ -1455,13 +1457,13 @@ def haarPowerMod(
             )
             minimumVariabilityTimescaleUncertainty = 0.0
 
-    # print the final results if requested
-    logger.debug(
-        f"{outputExportFilename} "
-        f"T_snr={peakSignalToNoiseRatio:f} "
-        f"T_beta={spectralIndexSlope:f} "
-        f"T_min={minimumVariabilityTimescale:f} +/- {minimumVariabilityTimescaleUncertainty:f}"
-    )
+#    # print the final results if requested commented out for now as later functions call this hundreds of times
+#    logger.debug(
+#        f"{outputExportFilename} "
+#        f"T_snr={peakSignalToNoiseRatio:f} "
+#        f"T_beta={spectralIndexSlope:f} "
+#        f"T_min={minimumVariabilityTimescale:f} +/- {minimumVariabilityTimescaleUncertainty:f}"
+#    )
 
     # return the computed parameters as a tuple
     return (
@@ -1473,6 +1475,79 @@ def haarPowerMod(
         peakSignalToNoiseUncertainty,
         variabilityTimescaleSTD
     )
+
+
+def _runSingleRealization(args):
+    """Worker function for a single Monte Carlo realisation."""
+    binCounts, binErrors, resampleErrors = args
+    sampledCounts = np.random.poisson(lam=binCounts)
+    iterationErrors = np.sqrt(sampledCounts) if resampleErrors else binErrors
+    (_, _, minimumVariabilityTimescale, _, _, _, _) = haarPowerMod(sampledCounts, iterationErrors)
+    return minimumVariabilityTimescale
+
+
+def estimateMvtUncertainty(
+        binCounts,
+        binErrors,
+        haarPowerMod,
+        nRealisations=300,
+        resampleErrors=False,
+        nWorkers=None):
+    """
+    Estimate the MVT and its uncertainty using Monte Carlo sampling,
+    with realisations computed in parallel.
+
+    Parameters
+    ----------
+    binCounts : array-like
+        Observed counts in each bin (treated as Poisson means).
+    binErrors : array-like
+        Observational error for each bin. Either held fixed across all
+        realisations (geometric instrument errors) or recomputed as
+        sqrt(sampledCounts) each iteration (Poisson-derived errors).
+    haarPowerMod : callable
+        The GB14 method function that calculates the MVT for a given
+        set of bin counts. Expected return order:
+        (peakSignalToNoiseRatio, spectralIndexSlope, minimumVariabilityTimescale,
+        minimumVariabilityTimescaleUncertainty, fittedPowerLawSlope,
+        peakSignalToNoiseUncertainty, variabilityTimescaleSTD)
+    nRealisations : int, optional
+        Number of Monte Carlo realisations (default: 300).
+    resampleErrors : bool, optional
+        If False (default), binErrors are held fixed across all realizations
+        (geometric instrument). If True, errors are recomputed as
+        sqrt(sampledCounts) each iteration (Poisson-derived instrument).
+    nWorkers : int or None, optional
+        Number of parallel worker processes. Defaults to None, which lets
+        ProcessPoolExecutor use the number of available CPU cores.
+
+    Returns
+    -------
+    mvtMedian : float
+        Median MVT across all realizations.
+    mvtStd : float
+        Standard deviation of MVT values across all realizations.
+    mvtValues : np.ndarray
+        Full array of MVT values from each realization.
+    """
+    binCounts = np.asarray(binCounts)
+    binErrors = np.asarray(binErrors)
+    mvtValues = np.empty(nRealisations)
+
+    args = [(binCounts, binErrors, resampleErrors)] * nRealisations
+
+    with ProcessPoolExecutor(max_workers=nWorkers) as executor:
+        futures = {executor.submit(_runSingleRealization, arg): i for i, arg in enumerate(args)}
+        progressBar = tqdm(as_completed(futures), total=nRealisations, desc="Monte Carlo MVT sampling", unit="realisation")
+        for future in progressBar:
+            i = futures[future]
+            mvtValues[i] = future.result()
+            progressBar.set_postfix(mvt=f"{mvtValues[i]:.4f}")
+
+    mvtMedian = np.median(mvtValues)
+    mvtStd    = np.std(mvtValues, ddof=1)
+
+    return mvtMedian, mvtStd, mvtValues
 
 
 def processSingleWindowWorker(
@@ -1500,7 +1575,7 @@ def processSingleWindowWorker(
     
     try:
         # get the MVT result for the current window
-        result: tuple = haarPowerMod(
+        result: tuple = haarPowerMod( # TODO this should be changed to the MCMC version of the MVT calculation
             windowCountsView,
             windowErrorsView,
             minimumBinSizeSeconds = binSizeInSeconds,

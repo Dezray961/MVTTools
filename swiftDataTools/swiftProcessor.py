@@ -425,8 +425,8 @@ class ProcessSwiftData:
         self.__eventDir: Path = self.__triggerDir / "event"
         self.__hkDir: Path = self.__triggerDir / "hk"
         self.__auxDir: Path = self.__triggerDir / "aux"
-        self.__processedDir: Path = self.__repoRoot / "data" / "processed" / self.GRBName
-        self.__processedDir.mkdir(parents=True, exist_ok=True)
+        self.processedDir: Path = self.__repoRoot / "data" / "processed" / self.GRBName
+        self.processedDir.mkdir(parents=True, exist_ok=True)
         self.__preBurstLightCurvePath: Path = self.__eventDir / "outputPreBurst.lc"
         self.__burstLightCurvePath: Path = self.__eventDir / "outputBurst.lc"
         self.__postBurstLightCurvePath: Path = self.__eventDir / "outputPostBurst.lc"
@@ -535,17 +535,17 @@ class ProcessSwiftData:
         writePhotonCountsToCSV(
             self.__photonCountsPreBurst,
             self.photonErrorsPreBurst,
-            self.__processedDir / "photonCountsPreBurst.csv"
+            self.processedDir / "photonCountsPreBurst.csv"
         )
         writePhotonCountsToCSV(
             self.__photonCounts,
             self.photonErrors,
-            self.__processedDir / "photonCounts.csv"
+            self.processedDir / "photonCounts.csv"
         )
         writePhotonCountsToCSV(
             self.__photonCountsPostBurst,
             self.photonErrorsPostBurst,
-            self.__processedDir / "photonCountsPostBurst.csv"
+            self.processedDir / "photonCountsPostBurst.csv"
         )
 
 

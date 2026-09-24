@@ -63,7 +63,7 @@ def processSwiftBATData(
         logger.info("Download complete.")
 
     # process the data using the HEASoft tools to generate light curves for the specified energy range and time bin size
-    ProcessSwiftData(grb)
+    data = ProcessSwiftData(grb)
 
     logger.info("Processing complete.")
 
@@ -73,8 +73,10 @@ def processSwiftBATData(
         rmtree(f'data/reproc/{grb.observationID}')
         logger.info("Deletion complete.")
 
+    return data.processedDir
+
 if __name__ == "__main__":
     from swiftDataTools.swiftBATCatalogueGRB import SwiftGRBCatalogue
     catalogue = SwiftGRBCatalogue("summary_general.csv")
     GRB080319B = catalogue.getGRBData("GRB080319B")
-    processSwiftBATData(GRB080319B)
+    print(processSwiftBATData(GRB080319B))

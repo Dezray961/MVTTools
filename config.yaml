@@ -7,8 +7,8 @@
 generalSettings:
   # Directories
   directories:
-    dataPath: "./data" # data path
-    processedDataPath: "./data/processed" # processed data path
+    dataPath: "/mnt/data/dp961/data" # data path
+    processedDataPath: "/mnt/data/dp961/processed" # processed data path
     sharedObjectsPath: "./cFiles" # shared objects path
     logPath: "./logs" # log path
 
@@ -34,7 +34,7 @@ preProcessingConfig:
   # General settings
   general:
     downloadData: true # if true, downloads data from the source
-    deleteWhenDone: false # if true, deletes downloaded files after processing
+    deleteWhenDone: true # if true, deletes downloaded files after processing
 
   # ======================================================================================
   # 2.1 Swift BAT Configuration
@@ -65,7 +65,7 @@ preProcessingConfig:
     # Processing settings
     processing:
       initialBinSize: 64e-3 # initial bin size
-      maxDetectorCombinations: 3 # maximum number of detector combinations to use for analysis HIGH MEMORY USAGE!
+      maxDetectorCombinations: 5 # maximum number of detector combinations to use for analysis HIGH MEMORY USAGE!
 
   # ======================================================================================
   # 2.3 SVOM Configuration
@@ -89,6 +89,7 @@ mvtAnalysisConfig:
   # Analysis settings
   signalToNoiseThreshold: 5.0 # signal-to-noise threshold
   significanceSigmaThreshold: 3.0 # significance sigma threshold for power over background noise
+  numberOfRealisations: 300 # number of realizations for MVT uncertainty estimation
 
   haarPowerModelSettings:
     # Power model settings

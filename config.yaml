@@ -98,7 +98,7 @@ mvtAnalysisConfig:
     totalSignalRepetitions: 2 # number of times to repeat the time series 
     shouldGeneratePlots: false # if true, generates plots for power model analysis do not use if using time-resolved MVT analysis!
     outputBinningRatio: 4 # output binning ratio larger numbers result in more bins
-    shouldVerifyZeroBaseline: true # if true, generates a plot of the zero level
+    shouldVerifyZeroBaseline: false # if true, generates a plot of the zero level
     scalingAdjustmentFactor: -1.0 # scaling adjustment factor, set to negative to have it estimated
     shouldPrintDiagnostics: false # if true, prints diagnostic information TODO: this needs to be switched to logging
     shouldApplyStatisticalWeight: true # if true, applies statistical weight to the analysis

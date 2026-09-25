@@ -23,6 +23,8 @@ if __name__ == "__main__":
     initialiseLogging()
 
 
+# bin size of the exported photon counts CSV (100 μs)
+EXPORT_BIN_SIZE_SECONDS: float = 1.0e-4
 
 class ProcessFermiData:
     """
@@ -366,6 +368,7 @@ class ProcessFermiData:
                 countsArray,
                 countUncertainties,
                 haarPowerMod,
+                binSizeSeconds = self._binSize,
                 nRealisations = config.mvtAnalysisConfig.numberOfRealisations
             )
             logger.debug(f"Calculated MVT: {minimumVariabilityTimescale} for detector combination: {currentDetectorCombination}")
@@ -406,7 +409,7 @@ class ProcessFermiData:
 
         outputFileName: str = "photonCounts.csv"
 
-        fixedBinSize: float = 0.0001
+        fixedBinSize: float = EXPORT_BIN_SIZE_SECONDS
         startTime: float = self._timeRange[0]
         endTime: float = self._timeRange[1]
         

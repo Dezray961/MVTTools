@@ -290,89 +290,40 @@ def haarNDWT(
             - Differential baseline noise power (np.ndarray)
             - Differential power uncertainty (np.ndarray)
     """
-    # length of the input time series
-    lengthOfData: int = len(poissonTimeSeriesData)
-    lengthOfDataPlusOne: int = lengthOfData + 1
+    # integral signal, weights and noise variance, each with a leading zero
+    integralSignalData: np.ndarray = np.concatenate((
+        [0.0],
+        np.cumsum(poissonTimeSeriesData.astype(floatType))
+    ))
+    integralWeights: np.ndarray = np.concatenate((
+        [0.0],
+        np.cumsum(statisticalWeights.astype(floatType))
+    ))
+    integralNoiseVariance: np.ndarray = np.concatenate((
+        [0.0],
+        np.cumsum(measurementError.astype(floatType) ** 2)
+    ))
 
-    # integral signal generation
-    integralSignalData: np.ndarray = np.empty(
-        lengthOfDataPlusOne,
-        dtype = floatType
-    )
-    np.cumsum(
-        poissonTimeSeriesData.astype(floatType),
-        out = integralSignalData[1:]
-    )
+    # repeat the time series end on end, matching the original haar_nondec (each pass appends the
+    # current integral minus its first and last points, offset by its final value)
+    for _ in range(totalSignalRepetitions - 1):
+        integralSignalData = np.concatenate((
+            integralSignalData,
+            integralSignalData[1:-1] + integralSignalData[-1]
+        ))
+        integralWeights = np.concatenate((
+            integralWeights,
+            integralWeights[1:-1] + integralWeights[-1]
+        ))
+        integralNoiseVariance = np.concatenate((
+            integralNoiseVariance,
+            integralNoiseVariance[1:-1] + integralNoiseVariance[-1]
+        ))
 
-    # integral weights generation
-    integralWeights: np.ndarray = np.empty(
-        lengthOfDataPlusOne,
-        dtype = floatType
-    )
-    np.cumsum(
-        statisticalWeights.astype(floatType),
-        out = integralWeights[1:]
-    )
+    # length of the (repeated) time series
+    lengthOfData: int = len(integralSignalData) - 1
 
-    # integral noise variance generation
-    integralNoiseVariance: np.ndarray = np.empty(
-        lengthOfDataPlusOne,
-        dtype = floatType
-    )
-    np.cumsum(
-        measurementError.astype(floatType) ** 2,
-        out = integralNoiseVariance[1:]
-    )
-
-    # calculate lengths allowing for the addition of a zero at the start of the cumulative sums
-    finalSignalLength: int = lengthOfData * totalSignalRepetitions + 1
-
-    # pre-alocate arrays for the tiled integral signal, weights, and noise variance
-    tiledSignalData: np.ndarray = np.empty(
-        finalSignalLength,
-        dtype = floatType
-    )
-    tiledWeights: np.ndarray = np.empty(
-        finalSignalLength,
-        dtype = floatType
-    )
-    tiledNoiseVariance: np.ndarray = np.empty(
-        finalSignalLength,
-        dtype = floatType
-    )
-
-    # copy the baseline original data into the first segment of the tiled arrays
-    tiledSignalData[:lengthOfDataPlusOne] = integralSignalData
-    tiledWeights[:lengthOfDataPlusOne] = integralWeights
-    tiledNoiseVariance[:lengthOfDataPlusOne] = integralNoiseVariance
-
-    # extract the core raw blocks excluding the initial zero for tiling
-    baseSignalSlice: float = integralSignalData[1:]
-    baseWeightsSlice: float = integralWeights[1:]
-    baseNoiseVarianceSlice: float = integralNoiseVariance[1:]
-
-    # get the final value of the original cumulative blocks to use as multipliers for tiling
-    signalStrideOffset: float = integralSignalData[-1]
-    weightsStrideOffset: float = integralWeights[-1]
-    noiseVarianceStrideOffset: float = integralNoiseVariance[-1]
-
-    # vectorised population of the tiled arrays
-    for repetitionIndex in range(1, totalSignalRepetitions):
-        startIndex: int = repetitionIndex * lengthOfDataPlusOne
-        endIndex: int = startIndex + lengthOfData
-
-        # broadcast the the cumulative offset into the preallocated slice
-        tiledSignalData[startIndex:endIndex] = (
-            baseSignalSlice + repetitionIndex * signalStrideOffset
-        )
-        tiledWeights[startIndex:endIndex] = (
-            baseWeightsSlice + repetitionIndex * weightsStrideOffset
-        )
-        tiledNoiseVariance[startIndex:endIndex] = (
-            baseNoiseVarianceSlice + repetitionIndex * noiseVarianceStrideOffset
-        )
-
-    # find the maximum wavelet scale index using the bit length of the active signal length minus one
+    # find the maximum wavelet scale index, equivalent to ceil(log2(lengthOfData))
     maximumWaveletScaleIndex: int = (lengthOfData - 1).bit_length()
 
     # boundary guard checks
@@ -381,86 +332,43 @@ def haarNDWT(
     if timeSeriesOversampleFactor < binFactor:
         timeSeriesOversampleFactor = binFactor
 
-    if binFactor < timeSeriesOversampleFactor:
-        # generate core dyadic scales
-        coreDyadicScales: np.ndarray = 1 << np.arange(
+    def generateScales(samplesPerOctave: float) -> np.ndarray:
+        """Dyadic scales merged with even-rounded scales sampled samplesPerOctave times per octave."""
+        dyadicScales: np.ndarray = 1 << np.arange(
             maximumWaveletScaleIndex,
-            dtype = intType)
-
-        # generate intermediate fractional scales
-        fractionalExponents: np.ndarray = np.arange(
-            maximumWaveletScaleIndex * binFactor,
-            dtype = floatType
+            dtype = intType
         )
-
-        # force intermediate scales to the nearest even integer
-        oversampledIntermediateScales: np.ndarray = (
-            2.0 * np.round(
-                (2.0 ** fractionalExponents) / 2.0)
+        intermediateScales: np.ndarray = 2.0 * np.round(
+            (2.0 ** (np.arange(maximumWaveletScaleIndex * samplesPerOctave, dtype = floatType) / samplesPerOctave)) / 2.0
         )
-
-        # merge the core dyadic scales and the oversampled intermediate scales, sort them, and remove duplicates
-        combinedScales: np.ndarray = np.hstack(
-            (coreDyadicScales, oversampledIntermediateScales)
-        ).astype(intType)
-        waveletScaleBlockWidths: np.ndarray = np.unique(combinedScales)
-
-        # filter with bitwise operations
-        validScalesMask: np.ndarray = (
-            (waveletScaleBlockWidths > 0)
-            & ((waveletScaleBlockWidths << 1) <= lengthOfData)
+        combinedScales: np.ndarray = np.unique(
+            np.hstack((dyadicScales, intermediateScales)).astype(intType)
         )
-        waveletScaleBlockWidths = waveletScaleBlockWidths[validScalesMask]
+        # keep scales whose full wavelet fits inside the time series
+        return combinedScales[(combinedScales > 0) & (2 * combinedScales <= lengthOfData)]
 
+    # finely oversampled scales at which the power spectrum is evaluated
+    waveletScaleBlockWidths: np.ndarray = generateScales(timeSeriesOversampleFactor)
 
-    # bitwise generation of core dyadic scales
-    baseDyadicScales: np.ndarray = 1 << np.arange(
-        maximumWaveletScaleIndex,
-        dtype = intType
-    )
-
-    # vectorised generation of intermediate oversampled scales
-    fractionalOversampleExponents: np.ndarray = np.arange(
-        maximumWaveletScaleIndex * timeSeriesOversampleFactor,
-        dtype = floatType
-    ) / timeSeriesOversampleFactor
-
-    # force intermediate scales to the nearest even integer
-    oversampledIntermediateScales: np.ndarray = (
-        2.0 * np.round(
-            (2.0 ** fractionalOversampleExponents) / 2.0
-        )
-    )
-
-    # merge and sort
-    combinedScalesVector: np.ndarray = np.hstack(
-        (baseDyadicScales, oversampledIntermediateScales)
-        ).astype(intType)
-    cleanedUniqueScales: np.ndarray = np.unique(combinedScalesVector)
-
-    # filter with bitwise operations to ensure valid scales
-    validScaleBoundsMask: np.ndarray = (
-        (cleanedUniqueScales > 0)
-        & ((cleanedUniqueScales << 1) <= lengthOfData)
-    )
-    cleanedUniqueScales: np.ndarray = cleanedUniqueScales[validScaleBoundsMask]
-
-    if binFactor >= timeSeriesOversampleFactor:
-        waveletScaleBlockWidths = cleanedUniqueScales.copy()
+    # coarser output scales defining the bands the power spectrum is averaged into
+    if binFactor < timeSeriesOversampleFactor:
+        outputScaleBoundaries: np.ndarray = generateScales(binFactor)
+    else:
+        outputScaleBoundaries: np.ndarray = waveletScaleBlockWidths.copy()
 
     # number of scales to be used in the analysis
     totalWaveletScales: int = len(waveletScaleBlockWidths)
 
     # preallocate arrays for the power spectrum, baseline noise power spectrum, and power spectrum variance
-    signalPowerSpectrum: np.ndarray = np.empty(
+    signalPowerSpectrum: np.ndarray = np.zeros(
         totalWaveletScales,
         dtype = floatType
     )
-    baselineNoisePowerSpectrum: np.ndarray = np.empty(
+    baselineNoisePowerSpectrum: np.ndarray = np.zeros(
         totalWaveletScales,
         dtype = floatType
     )
-    powerSpectrumVariance: np.ndarray = np.empty(
+    powerSpectrumVariance: np.ndarray = np.zeros(
         totalWaveletScales,
         dtype = floatType
     )
@@ -469,25 +377,18 @@ def haarNDWT(
     for scaleIndex in range(totalWaveletScales):
         # extract the block width for the current scale
         waveletScaleBlockWidth: int = int(waveletScaleBlockWidths[scaleIndex])
-
         twoScale: int = waveletScaleBlockWidth << 1
-        # guard against twoScale exceeding the length of the data
-        if twoScale >= lengthOfData or twoScale <= 0 or waveletScaleBlockWidth <= 0:
-            continue
         squaredScaleBlockWidth: float = float(waveletScaleBlockWidth) * float(waveletScaleBlockWidth)
 
         # calculate the boundary correction for the active window
         validWindowCount: int = int(lengthOfData - twoScale + 1)
         boundaryCorrectionFactor: float = lengthOfData / validWindowCount
 
-        # pre-cache slices
-        sliceStart: np.ndarray = integralSignalData[twoScale:lengthOfData + 1]
-        sliceMiddle: np.ndarray = integralSignalData[waveletScaleBlockWidth:lengthOfData - waveletScaleBlockWidth + 1]
-        sliceEnd: np.ndarray = integralSignalData[:validWindowCount]
-
         # non-decimated calculation and squaring of the Haar wavelet coefficients
         waveletCoefficients: np.ndarray = (
-            sliceStart - (sliceMiddle * 2) + sliceEnd
+            integralSignalData[twoScale:lengthOfData + 1]
+            - 2 * integralSignalData[waveletScaleBlockWidth:lengthOfData - waveletScaleBlockWidth + 1]
+            + integralSignalData[:validWindowCount]
         )
         squaredWaveletCoefficients: np.ndarray = waveletCoefficients * waveletCoefficients
 
@@ -504,97 +405,73 @@ def haarNDWT(
         meanLocalWeights: float = normalisedLocalWeights.mean()
 
         # spectrum accumulation
-        # compute inverse constants
         inverseScaleWeightDenominator: float = (
             1.0 / (squaredScaleBlockWidth * meanLocalWeights)
         )
-
-        # calculate final power arrays element-wise
-        weightedSignalPower: float = (
-            squaredWaveletCoefficients * normalisedLocalWeights
-        ).sum()
         signalPowerSpectrum[scaleIndex] = (
-            weightedSignalPower * boundaryCorrectionFactor * inverseScaleWeightDenominator
+            (squaredWaveletCoefficients * normalisedLocalWeights).sum()
+            * boundaryCorrectionFactor * inverseScaleWeightDenominator
         )
-        
-        weightedNoisePower: float = (
-            waveletVarianceWindows * normalisedLocalWeights
-        ).sum()
-        currentNoiseSpectrum: float = (
-            weightedNoisePower * boundaryCorrectionFactor * inverseScaleWeightDenominator
-        )
-        baselineNoisePowerSpectrum[scaleIndex] = currentNoiseSpectrum
 
-        # variance vector calculation
         varianceWindowProducts: np.ndarray = (
             waveletVarianceWindows * normalisedLocalWeights
         )
-        squaredVarianceWindowProducts: float = (
-            varianceWindowProducts * varianceWindowProducts
-        ).sum()
+        currentNoiseSpectrum: float = (
+            varianceWindowProducts.sum() * boundaryCorrectionFactor * inverseScaleWeightDenominator
+        )
+        baselineNoisePowerSpectrum[scaleIndex] = currentNoiseSpectrum
 
-        # consolidate trailing operations
+        # variance of the power spectrum (signal = 0, error only)
         inverseSquaredMeanWeight: float = 1.0 / (meanLocalWeights * meanLocalWeights)
         varianceTerm: float = (
-            (squaredVarianceWindowProducts / squaredScaleBlockWidth * inverseSquaredMeanWeight)
+            ((varianceWindowProducts * varianceWindowProducts).sum() / squaredScaleBlockWidth * inverseSquaredMeanWeight)
             + (0.5 * currentNoiseSpectrum)
         )
-
         powerSpectrumVariance[scaleIndex] = (
             (varianceTerm * (boundaryCorrectionFactor * boundaryCorrectionFactor))
             / float(waveletScaleBlockWidth)
         )
 
-    # create shifted overlapping views across valid scale bands
-    lowerBoundScales: np.ndarray = waveletScaleBlockWidths[: - 1] # tracks [0 to N-1]
-    upperBoundScales: np.ndarray = waveletScaleBlockWidths[1:] # tracks [1 to N]
+    # adjacent output band boundaries. These are deliberately views of outputScaleBoundaries, as in
+    # the original haar_nondec: updating one band's limits also updates its neighbour's
+    lowerBoundScales: np.ndarray = outputScaleBoundaries[:-1]
+    upperBoundScales: np.ndarray = outputScaleBoundaries[1:]
 
-    # calculate the number of adjacent scale transitions pairs
+    # number of adjacent scale bands
     adjacentScalePairCount: int = len(lowerBoundScales)
 
     # allocate arrays for the differential power spectrum calculations
-    differentialSignalPower: np.ndarray = np.empty(adjacentScalePairCount, dtype = floatType)
-    differentialBaselineNoisePower: np.ndarray = np.empty(adjacentScalePairCount, dtype = floatType)
-    differentialPowerUncertainty: np.ndarray = np.empty(adjacentScalePairCount, dtype = floatType)
+    differentialSignalPower: np.ndarray = np.zeros(adjacentScalePairCount, dtype = floatType)
+    differentialBaselineNoisePower: np.ndarray = np.zeros(adjacentScalePairCount, dtype = floatType)
+    differentialPowerUncertainty: np.ndarray = np.zeros(adjacentScalePairCount, dtype = floatType)
 
     # scalar constant multiplier
     varianceReplicationMultiplier: float = float(totalSignalRepetitions + 1)
 
+    # average the finely sampled power spectrum within each output band
     for scalePairIndex in range(adjacentScalePairCount):
-        # filter with bitwise AND
-        lowerLimit: int = lowerBoundScales[scalePairIndex]
-        upperLimit: int = upperBoundScales[scalePairIndex]
         matchingScaleMask: np.ndarray = (
-            (baseDyadicScales >= lowerLimit)
-            & (baseDyadicScales < upperLimit)
+            (waveletScaleBlockWidths >= lowerBoundScales[scalePairIndex])
+            & (waveletScaleBlockWidths < upperBoundScales[scalePairIndex])
         )
-
-        # count the number of matching scales
         matchingScaleCount: int = np.count_nonzero(matchingScaleMask)
 
         if (matchingScaleCount > 0):
-            # extract matching subsets
-            matchingScales: np.ndarray = baseDyadicScales[matchingScaleMask]
+            matchingScales: np.ndarray = waveletScaleBlockWidths[matchingScaleMask]
             inverseCount: float = 1.0 / float(matchingScaleCount)
 
-            # find the minimum and maximum scales in the matching subset
+            # tighten the band limits to the scales actually inside it
             lowerBoundScales[scalePairIndex] = matchingScales.min()
             upperBoundScales[scalePairIndex] = matchingScales.max()
 
-            # accumulate the differential power and baseline noise power spectra
             differentialSignalPower[scalePairIndex] = (
                 signalPowerSpectrum[matchingScaleMask].sum() * inverseCount
             )
             differentialBaselineNoisePower[scalePairIndex] = (
                 baselineNoisePowerSpectrum[matchingScaleMask].sum() * inverseCount
             )
-
-            # consolidate the uncertainty
-            totalScaledVariance: float = (
-                powerSpectrumVariance[matchingScaleMask].sum() * varianceReplicationMultiplier
-            )
-            differentialPowerUncertainty[scalePairIndex] = (
-                np.sqrt(totalScaledVariance * inverseCount)
+            differentialPowerUncertainty[scalePairIndex] = np.sqrt(
+                powerSpectrumVariance[matchingScaleMask].sum() * varianceReplicationMultiplier * inverseCount
             )
 
     # return the results scaled by the bin size in seconds
@@ -734,20 +611,22 @@ def evaluateBreakPointResiduals(
     return lowerRegionChiSquared + upperRegionChiSquared
 
 
+haarPowerModSettings = config.mvtAnalysisConfig.haarPowerModelSettings
+
 def haarPowerMod(
         emissionRateSignal: np.ndarray,
         emissionRateUncertainty: np.ndarray,
         minimumBinSizeSeconds: float = 1.0e-4,
-        maximumBinSizeSeconds: float = 100.0,
-        maxBackgroundTimescale: float = 0.01,
-        totalSignalRepetitions: int = 2,
-        shouldGeneratePlots: bool = True,
-        outputBinningRatio: int = 4,
-        shouldVerifyZeroBaseline: bool = False,
-        scalingAdjustmentFactor: float = -1.0,
-        signalToNoiseRatioThreshold: float = 3.0,
-        shouldApplyStatisticalWeight: bool = True,
-        outputExportFilename: str = 'test',
+        maximumBinSizeSeconds: float = float(haarPowerModSettings.maximumBinSizeSeconds),
+        maxBackgroundTimescale: float = float(haarPowerModSettings.maxBackgroundTimescale),
+        totalSignalRepetitions: int = int(haarPowerModSettings.totalSignalRepetitions),
+        shouldGeneratePlots: bool = bool(haarPowerModSettings.shouldGeneratePlots),
+        outputBinningRatio: int = int(haarPowerModSettings.outputBinningRatio),
+        shouldVerifyZeroBaseline: bool = bool(haarPowerModSettings.shouldVerifyZeroBaseline),
+        scalingAdjustmentFactor: float = float(haarPowerModSettings.scalingAdjustmentFactor),
+        signalToNoiseRatioThreshold: float = float(config.mvtAnalysisConfig.significanceSigmaThreshold),
+        shouldApplyStatisticalWeight: bool = bool(haarPowerModSettings.shouldApplyStatisticalWeight),
+        outputExportFilename: str = str(haarPowerModSettings.outputExportFilename),
         floatType = 'float64',
         intType = 'int32'
         ) -> tuple[float, float, float, float, float, float, float]:
@@ -756,20 +635,22 @@ def haarPowerMod(
     set scalingAdjustmentFactor to negative to have the code estimate it
     largest timescale used will be maxBackgroundTimescale
 
+    All defaults other than minimumBinSizeSeconds, floatType and intType are read from mvtAnalysisConfig in config.yaml (haarPowerModelSettings, and significanceSigmaThreshold for signalToNoiseRatioThreshold). Explicitly passed arguments override the config values.
+
     Args:
         emissionRateSignal (np.ndarray): The input emission rate signal.
         emissionRateUncertainty (np.ndarray): The uncertainty associated with the emission rate signal.
-        minimumBinSizeSeconds (float, optional): The minimum bin size in seconds. Defaults to 1.0e-4.
-        maximumBinSizeSeconds (float, optional): The maximum bin size in seconds. Defaults to 100.0.
-        maxBackgroundTimescale (float, optional): The maximum timescale for background noise. Defaults to 0.01.
-        totalSignalRepetitions (int, optional): The number of times to repeat the signal. Defaults to 2.
-        shouldGeneratePlots (bool, optional): Whether to generate plots. Defaults to True.
-        outputBinningRatio (int, optional): The binning ratio for output. Defaults to 4.
-        shouldVerifyZeroBaseline (bool, optional): Whether to verify zero baseline. Defaults to False.
-        scalingAdjustmentFactor (float, optional): The scaling adjustment factor. Defaults to -1.0.
-        signalToNoiseRatioThreshold (float, optional): The signal-to-noise ratio threshold. Defaults to 3.0.
-        shouldApplyStatisticalWeight (bool, optional): Whether to apply statistical weights. Defaults to True.
-        outputExportFilename (str, optional): The filename for exporting output. Defaults to 'test'.
+        minimumBinSizeSeconds (float, optional): The bin size of the input signal in seconds. Defaults to 1.0e-4.
+        maximumBinSizeSeconds (float, optional): The maximum bin size in seconds.
+        maxBackgroundTimescale (float, optional): The maximum timescale for background noise.
+        totalSignalRepetitions (int, optional): The number of times to repeat the signal.
+        shouldGeneratePlots (bool, optional): Whether to generate plots.
+        outputBinningRatio (int, optional): The binning ratio for output.
+        shouldVerifyZeroBaseline (bool, optional): Whether to verify zero baseline.
+        scalingAdjustmentFactor (float, optional): The scaling adjustment factor.
+        signalToNoiseRatioThreshold (float, optional): The significance (in sigma) of power over background noise required for a timescale to count as signal.
+        shouldApplyStatisticalWeight (bool, optional): Whether to apply statistical weights.
+        outputExportFilename (str, optional): The filename for exporting output.
         floatType (str, optional): Data type for computations. Defaults to 'float64'.
         intType (str, optional): Data type for integer computations. Defaults to 'int32'.
 
@@ -1479,10 +1360,12 @@ def haarPowerMod(
 
 def _runSinglerealisation(args):
     """Worker function for a single Monte Carlo realisation."""
-    binCounts, binErrors, resampleErrors = args
+    binCounts, binErrors, resampleErrors, binSizeSeconds = args
     sampledCounts = np.random.poisson(lam=binCounts)
     iterationErrors = np.sqrt(sampledCounts) if resampleErrors else binErrors
-    (_, _, minimumVariabilityTimescale, _, _, _, _) = haarPowerMod(sampledCounts, iterationErrors)
+    (_, _, minimumVariabilityTimescale, _, _, _, _) = haarPowerMod(
+        sampledCounts, iterationErrors, minimumBinSizeSeconds=binSizeSeconds
+    )
     return minimumVariabilityTimescale
 
 
@@ -1490,6 +1373,7 @@ def estimateMvtUncertainty(
         binCounts,
         binErrors,
         haarPowerMod,
+        binSizeSeconds,
         nRealisations=300,
         resampleErrors=False,
         nWorkers=None):
@@ -1505,6 +1389,8 @@ def estimateMvtUncertainty(
         Observational error for each bin. Either held fixed across all realisations (geometric instrument errors) or recomputed as sqrt(sampledCounts) each iteration (Poisson-derived errors).
     haarPowerMod : callable
         The GB14 method function that calculates the MVT for a given set of bin counts. Expected return order: (peakSignalToNoiseRatio, spectralIndexSlope, minimumVariabilityTimescale, minimumVariabilityTimescaleUncertainty, fittedPowerLawSlope, peakSignalToNoiseUncertainty, variabilityTimescaleSTD)
+    binSizeSeconds : float
+        Width of each bin in binCounts, in seconds. Used to convert timescales from bins to seconds.
     nRealisations : int, optional
         Number of Monte Carlo realisations (default: 300).
     resampleErrors : bool, optional
@@ -1525,7 +1411,7 @@ def estimateMvtUncertainty(
     binErrors = np.asarray(binErrors)
     mvtValues = np.empty(nRealisations)
 
-    args = [(binCounts, binErrors, resampleErrors)] * nRealisations
+    args = [(binCounts, binErrors, resampleErrors, binSizeSeconds)] * nRealisations
 
     with ProcessPoolExecutor(max_workers=nWorkers) as executor:
         futures = {executor.submit(_runSinglerealisation, arg): i for i, arg in enumerate(args)}
@@ -1548,8 +1434,7 @@ def processSingleWindowWorker(
     windowErrorsView: np.ndarray,
     absoluteStartTimeSeconds: float,
     binSizeInSeconds: float,
-    windowDurationBins: int,
-    pipelineKeywordArguments: dict
+    windowDurationBins: int
 ) -> dict:
     """Independent worker task that runs MVT denoising on a single window."""
     
@@ -1569,8 +1454,7 @@ def processSingleWindowWorker(
         result: tuple = haarPowerMod( # TODO this should be changed to the MCMC version of the MVT calculation
             windowCountsView,
             windowErrorsView,
-            minimumBinSizeSeconds = binSizeInSeconds,
-            **pipelineKeywordArguments
+            minimumBinSizeSeconds = binSizeInSeconds
             )
         
         # Extract minimumVariabilityTimescale (index 2) and minimumVariabilityTimescaleUncertainty (index 3)
@@ -1624,7 +1508,10 @@ def timeResolvedMVT(
         errors (np.ndarray): The errors for the counts.
         source (str): The source of the data.
         absoluteStartTimeSeconds (float): The absolute start time of the counts array. Defaults to 0.0.
-        **haarPowerMod_kwargs: Additional arguments to pass to haarPowerMod.
+        timeWindowSizeSeconds (float, optional): The sliding window size in seconds. Defaults to the timeWindowSize value in config.yaml.
+
+    Note:
+        haarPowerMod settings are taken from config.yaml via haarPowerMod's defaults.
 
     Returns:
         list: A list of dictionaries containing the results for each time window.
@@ -1633,21 +1520,8 @@ def timeResolvedMVT(
     binSizeInSeconds: float = getInitialBinSize(source)
     if timeWindowSizeSeconds is None:
         timeWindowSizeSeconds = float(config.mvtAnalysisConfig.timeResolvedMVTSettings.timeWindowSize)
-    else:
-        windowDurationSeconds: float = timeWindowSizeSeconds
+    windowDurationSeconds: float = timeWindowSizeSeconds
     stepDurationSeconds: float = float(config.mvtAnalysisConfig.timeResolvedMVTSettings.stepDurationSeconds)
-    haarPowerMod_kwargs: dict = {
-        'maxBackgroundTimescale': float(config.mvtAnalysisConfig.haarPowerModelSettings.maxBackgroundTimescale),
-        'totalSignalRepetitions': int(config.mvtAnalysisConfig.haarPowerModelSettings.totalSignalRepetitions),
-        'shouldGeneratePlots': bool(config.mvtAnalysisConfig.haarPowerModelSettings.shouldGeneratePlots),
-        'outputBinningRatio': int(config.mvtAnalysisConfig.haarPowerModelSettings.outputBinningRatio),
-        'shouldVerifyZeroBaseline': bool(config.mvtAnalysisConfig.haarPowerModelSettings.shouldVerifyZeroBaseline),
-        'scalingAdjustmentFactor': float(config.mvtAnalysisConfig.haarPowerModelSettings.scalingAdjustmentFactor),
-        'signalToNoiseRatioThreshold': float(config.mvtAnalysisConfig.signalToNoiseThreshold),
-        'shouldPrintDiagnostics': bool(config.mvtAnalysisConfig.haarPowerModelSettings.shouldPrintDiagnostics),
-        'shouldApplyStatisticalWeight': bool(config.mvtAnalysisConfig.haarPowerModelSettings.shouldApplyStatisticalWeight),
-        'outputExportFilename': str(config.mvtAnalysisConfig.haarPowerModelSettings.outputExportFilename)
-    }
 
     # convert physical time into integer bin metrics
     windowDurationBins = int(
@@ -1684,8 +1558,7 @@ def timeResolvedMVT(
             windowErrorsView,
             absoluteStartTimeSeconds,
             binSizeInSeconds,
-            windowDurationBins,
-            haarPowerMod_kwargs
+            windowDurationBins
         ))
         
         # move to the next window

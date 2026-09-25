@@ -2,13 +2,14 @@ from analysisTools.GRBData import GRBData
 from analysisTools.haarMethods import estimateMvtUncertainty, haarPowerMod
 from fermiDataTools.fermiGBMCatalogueGRB import getFermiGRBData
 from fermiDataTools.fermiGBMPipe import processFermiGBMData
+from fermiDataTools.fermiGRBObservation import EXPORT_BIN_SIZE_SECONDS
 from swiftDataTools.swiftBATCatalogueGRB import SwiftGRBCatalogue
 from swiftDataTools.swiftBATPipe import processSwiftBATData
 
 import numpy as np
 
 # standard logging/configuration setup
-from loadConfig import config
+from loadConfig import config, getInitialBinSize
 import logging
 logger = logging.getLogger(__name__)
 if __name__ == "__main__":
@@ -53,6 +54,7 @@ class GRBLightCurveAnalysis:
             self.counts,
             self.errors,
             haarPowerMod,
+            binSizeSeconds = self._binSize,
             nRealisations = config.mvtAnalysisConfig.numberOfRealisations
         )
 
@@ -64,11 +66,13 @@ class GRBLightCurveAnalysis:
             case "fermi":
                 self.grb: GRBData = getFermiGRBData(self.grbName)
                 self._processedDir = processFermiGBMData(self.grb, timeRange=self.timeRange)
-            
+                self._binSize: float = EXPORT_BIN_SIZE_SECONDS
+
             case "swift":
                 self._catalogue = SwiftGRBCatalogue("summary_general.csv")
                 self.grb: GRBData = self._catalogue.getGRBData(self.grbName)
                 self._processedDir = processSwiftBATData(self.grb)
+                self._binSize: float = getInitialBinSize("swift")
 
             case "svom":
                 raise NotImplementedError("SVOM data processing is not yet implemented.")

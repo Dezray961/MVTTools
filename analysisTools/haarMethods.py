@@ -1477,7 +1477,7 @@ def haarPowerMod(
     )
 
 
-def _runSingleRealization(args):
+def _runSinglerealisation(args):
     """Worker function for a single Monte Carlo realisation."""
     binCounts, binErrors, resampleErrors = args
     sampledCounts = np.random.poisson(lam=binCounts)
@@ -1502,33 +1502,24 @@ def estimateMvtUncertainty(
     binCounts : array-like
         Observed counts in each bin (treated as Poisson means).
     binErrors : array-like
-        Observational error for each bin. Either held fixed across all
-        realisations (geometric instrument errors) or recomputed as
-        sqrt(sampledCounts) each iteration (Poisson-derived errors).
+        Observational error for each bin. Either held fixed across all realisations (geometric instrument errors) or recomputed as sqrt(sampledCounts) each iteration (Poisson-derived errors).
     haarPowerMod : callable
-        The GB14 method function that calculates the MVT for a given
-        set of bin counts. Expected return order:
-        (peakSignalToNoiseRatio, spectralIndexSlope, minimumVariabilityTimescale,
-        minimumVariabilityTimescaleUncertainty, fittedPowerLawSlope,
-        peakSignalToNoiseUncertainty, variabilityTimescaleSTD)
+        The GB14 method function that calculates the MVT for a given set of bin counts. Expected return order: (peakSignalToNoiseRatio, spectralIndexSlope, minimumVariabilityTimescale, minimumVariabilityTimescaleUncertainty, fittedPowerLawSlope, peakSignalToNoiseUncertainty, variabilityTimescaleSTD)
     nRealisations : int, optional
         Number of Monte Carlo realisations (default: 300).
     resampleErrors : bool, optional
-        If False (default), binErrors are held fixed across all realizations
-        (geometric instrument). If True, errors are recomputed as
-        sqrt(sampledCounts) each iteration (Poisson-derived instrument).
+        If False (default), binErrors are held fixed across all realisations (geometric instrument i.e. Swift). If True, errors are recomputed as sqrt(sampledCounts) each iteration (Poisson-derived instrument).
     nWorkers : int or None, optional
-        Number of parallel worker processes. Defaults to None, which lets
-        ProcessPoolExecutor use the number of available CPU cores.
+        Number of parallel worker processes. Defaults to None, which lets ProcessPoolExecutor use the number of available CPU cores.
 
     Returns
     -------
-    mvtMedian : float
-        Median MVT across all realizations.
+    mvtMean : float
+        Mean MVT across all realisations.
     mvtStd : float
-        Standard deviation of MVT values across all realizations.
+        Standard deviation of MVT values across all realisations.
     mvtValues : np.ndarray
-        Full array of MVT values from each realization.
+        Full array of MVT values from each realisation.
     """
     binCounts = np.asarray(binCounts)
     binErrors = np.asarray(binErrors)
@@ -1537,17 +1528,17 @@ def estimateMvtUncertainty(
     args = [(binCounts, binErrors, resampleErrors)] * nRealisations
 
     with ProcessPoolExecutor(max_workers=nWorkers) as executor:
-        futures = {executor.submit(_runSingleRealization, arg): i for i, arg in enumerate(args)}
+        futures = {executor.submit(_runSinglerealisation, arg): i for i, arg in enumerate(args)}
         progressBar = tqdm(as_completed(futures), total=nRealisations, desc="Monte Carlo MVT sampling", unit="realisation")
         for future in progressBar:
             i = futures[future]
             mvtValues[i] = future.result()
             progressBar.set_postfix(mvt=f"{mvtValues[i]:.4f}")
 
-    mvtMedian = np.median(mvtValues)
-    mvtStd    = np.std(mvtValues, ddof=1)
+    mvtMean = np.mean(mvtValues)
+    mvtStd  = np.std(mvtValues, ddof=1)
 
-    return mvtMedian, mvtStd, mvtValues
+    return mvtMean, mvtStd, mvtValues
 
 
 def processSingleWindowWorker(

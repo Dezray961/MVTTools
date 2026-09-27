@@ -1,6 +1,0 @@
-infile,fr,a,"/home/derekpinkett/coding/MVTTools/data/reproc/00306757000/bat/event/outputSpectrum.pha",,,"Input spectrum filename"
-syserrfile,f,a,"CALDB",,,"Systematic error filename"
-chatter,i,h,2,0,5,"Verbosity level"
-clobber,b,h,no,,,"Clobber existing output file?"
-history,b,h,yes,,,"Write history block?"
-mode,s,h,ql,,,""

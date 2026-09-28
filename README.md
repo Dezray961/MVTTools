@@ -23,3 +23,5 @@ in the configuration are resolved relative to that configuration file.
 # conda environs
 With the inclusion of `xspec` this now needs two seperate python environments. xspec requires python 3.10 and the rest needs 3.13. Currently I have this set up as:
 * (XSpecEnv) installed with `conda create -n XspecEnv python=3.10 -c conda-forge -y` and `conda install -y -c https://heasarc.gsfc.nasa.gov/FTP/software/conda/ -c conda-forge xspec xspec-data numpy astropy scipy`
+
+Published under the MIT License.

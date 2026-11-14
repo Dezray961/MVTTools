@@ -33,7 +33,7 @@ filterwarnings('ignore', r'invalid value encountered')
 
 def haarDenoise(
         data: np.ndarray,
-        error: np.ndarray | None = [],
+        error: np.ndarray | None = None,
         thresholdFactor: float = 1.0,
         estimateNoise: bool = False,
         soft: bool = False,
@@ -44,7 +44,7 @@ def haarDenoise(
 
     Args:
         data (np.ndarray): 1D array of input data to be denoised.
-        error (np.ndarray, optional): 1D array of error values. Defaults to [].
+        error (np.ndarray, optional): 1D array of error values. Defaults to None.
         thresholdFactor (float, optional): Threshold factor for denoising. Defaults to 1.0.
         estimateNoise (bool, optional): Whether to estimate noise. Defaults to False.
         soft (bool, optional): Whether to use soft thresholding. Defaults to False.
@@ -243,15 +243,12 @@ def haarDenoise(
             + levelApproximationCoefficients[-1]
         )
 
-        # accumulate the results into the reconstructed signal
-        reconstructedSignal[twoScale:] += (
-            diffMain[::-1] * inverseSquaredScale
-        )
-        reconstructedSignal[waveletScaleBlockWidth:twoScale] += (
-            diffLeft[::-1] * inverseSquaredScale
-        )
-        reconstructedSignal[:waveletScaleBlockWidth] += (
-            diffRight[::-1] * inverseSquaredScale
+        # accumulate the results into the reconstructed signal. The circular block
+        # [diffMain, diffLeft, diffRight] is indexed by coefficient position i; sample j
+        # receives -diff[(j - twoScale - 1) mod N], i.e. a circular shift, not a reversal
+        diffFull: np.ndarray = np.concatenate((diffMain, diffLeft, diffRight))
+        reconstructedSignal -= (
+            np.roll(diffFull, twoScale + 1) * inverseSquaredScale
         )
 
     # return the reconstructed signal, removing any padding that was added
@@ -1360,8 +1357,11 @@ def haarPowerMod(
 
 def _runSinglerealisation(args):
     """Worker function for a single Monte Carlo realisation."""
-    binCounts, binErrors, resampleErrors, binSizeSeconds = args
-    sampledCounts = np.random.poisson(lam=binCounts)
+    binCounts, binErrors, resampleErrors, binSizeSeconds, seedSequence = args
+    # each realisation gets its own independent generator; the global np.random state
+    # is copied identically into every forked worker, so it must not be used here
+    rng = np.random.default_rng(seedSequence)
+    sampledCounts = rng.poisson(lam=binCounts)
     iterationErrors = np.sqrt(sampledCounts) if resampleErrors else binErrors
     (_, _, minimumVariabilityTimescale, _, _, _, _) = haarPowerMod(
         sampledCounts, iterationErrors, minimumBinSizeSeconds=binSizeSeconds
@@ -1376,7 +1376,8 @@ def estimateMvtUncertainty(
         binSizeSeconds,
         nRealisations=300,
         resampleErrors=False,
-        nWorkers=None):
+        nWorkers=None,
+        seed=None):
     """
     Estimate the MVT and its uncertainty using Monte Carlo sampling,
     with realisations computed in parallel.
@@ -1397,21 +1398,29 @@ def estimateMvtUncertainty(
         If False (default), binErrors are held fixed across all realisations (geometric instrument i.e. Swift). If True, errors are recomputed as sqrt(sampledCounts) each iteration (Poisson-derived instrument).
     nWorkers : int or None, optional
         Number of parallel worker processes. Defaults to None, which lets ProcessPoolExecutor use the number of available CPU cores.
+    seed : int or None, optional
+        Seed for reproducible realisations. Defaults to None (fresh OS entropy each call). Each realisation draws from its own independent child stream, so results do not depend on nWorkers.
 
     Returns
     -------
     mvtMean : float
-        Mean MVT across all realisations.
+        Mean MVT across realisations that found a valid (finite, > 0) timescale.
+        0.0 if no realisation succeeded.
     mvtStd : float
-        Standard deviation of MVT values across all realisations.
+        Standard deviation of the valid MVT values. NaN if fewer than two succeeded.
     mvtValues : np.ndarray
-        Full array of MVT values from each realisation.
+        Full array of MVT values from each realisation, including failed (0.0) ones.
     """
     binCounts = np.asarray(binCounts)
     binErrors = np.asarray(binErrors)
     mvtValues = np.empty(nRealisations)
 
-    args = [(binCounts, binErrors, resampleErrors, binSizeSeconds)] * nRealisations
+    # spawn statistically independent child seeds, one per realisation
+    childSeeds = np.random.SeedSequence(seed).spawn(nRealisations)
+    args = [
+        (binCounts, binErrors, resampleErrors, binSizeSeconds, childSeed)
+        for childSeed in childSeeds
+    ]
 
     with ProcessPoolExecutor(max_workers=nWorkers) as executor:
         futures = {executor.submit(_runSinglerealisation, arg): i for i, arg in enumerate(args)}
@@ -1421,8 +1430,22 @@ def estimateMvtUncertainty(
             mvtValues[i] = future.result()
             progressBar.set_postfix(mvt=f"{mvtValues[i]:.4f}")
 
-    mvtMean = np.mean(mvtValues)
-    mvtStd  = np.std(mvtValues, ddof=1)
+    # haarPowerMod returns 0.0 when it cannot find an MVT; exclude those (and any
+    # non-finite values) so failed realisations do not drag the mean and spread down
+    validMask = np.isfinite(mvtValues) & (mvtValues > 0.0)
+    nValid = int(np.count_nonzero(validMask))
+    nFailed = nRealisations - nValid
+    if nFailed:
+        logger.warning(
+            f"{nFailed}/{nRealisations} MVT realisations found no valid timescale and were excluded"
+        )
+
+    if nValid == 0:
+        # keep 0.0 so callers' existing "MVT <= 0" failure checks still trigger
+        return 0.0, np.nan, mvtValues
+
+    mvtMean = np.mean(mvtValues[validMask])
+    mvtStd  = np.std(mvtValues[validMask], ddof=1) if nValid > 1 else np.nan
 
     return mvtMean, mvtStd, mvtValues
 
